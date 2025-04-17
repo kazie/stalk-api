@@ -1,0 +1,15 @@
+GET http://localhost:8080/api/coords
+
+###
+GET http://localhost:8080/api/coords/kazie
+
+###
+POST http://localhost:8080/api/coords
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "kazie",
+  "latitude": 59.32721756211293,
+  "longitude": 18.107101093216905
+}

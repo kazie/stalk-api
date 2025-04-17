@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT \n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_cords\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "latitude!: f64",
+        "ordinal": 1,
+        "type_info": "Float"
+      },
+      {
+        "name": "longitude!: f64",
+        "ordinal": 2,
+        "type_info": "Float"
+      },
+      {
+        "name": "timestamp!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8edb19f7898ee76ef828cc62b60c854d78266b6cfcfdd1abf3fa36d14dfbcb6a"
+}

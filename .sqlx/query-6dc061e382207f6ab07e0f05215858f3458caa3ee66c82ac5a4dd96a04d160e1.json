@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO user_cords (name, latitude, longitude)\n        VALUES (?, ?, ?)\n        ON CONFLICT(name) DO UPDATE SET\n            latitude = excluded.latitude,\n            longitude = excluded.longitude,\n            timestamp = datetime('now')\n        RETURNING \n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "latitude!: f64",
+        "ordinal": 1,
+        "type_info": "Float"
+      },
+      {
+        "name": "longitude!: f64",
+        "ordinal": 2,
+        "type_info": "Float"
+      },
+      {
+        "name": "timestamp!: String",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6dc061e382207f6ab07e0f05215858f3458caa3ee66c82ac5a4dd96a04d160e1"
+}
