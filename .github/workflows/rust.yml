@@ -30,9 +30,11 @@ jobs:
         rustc --version
         cargo --version
 
+    - name: Fetch dependencies
+      run: cargo fetch
+
     - name: Install SQLx CLI
       run: cargo install sqlx-cli --no-default-features --features sqlite
-
 
     - name: Cache dependencies
       uses: actions/cache@v3
