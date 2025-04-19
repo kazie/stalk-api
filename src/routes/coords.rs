@@ -22,7 +22,7 @@ pub async fn update_location(
 }
 
 // Handler for getting all items
-pub async fn let_locations(state: Data<AppState>) -> impl Responder {
+pub async fn get_locations(state: Data<AppState>) -> impl Responder {
     debug!("Get all user coords");
     let result = get_all_cords(&state.db).await;
 

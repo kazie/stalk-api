@@ -2,7 +2,7 @@ use actix_web::{web, App, HttpServer};
 use clap::Parser;
 use log::{info};
 use sqlx::sqlite::SqlitePoolOptions;
-use stalk_api::routes::{get_user, let_locations, update_location};
+use stalk_api::routes::{get_user, get_locations, update_location};
 use stalk_api::AppState;
 use stalk_api::db::{check_and_create_db_file, migrate};
 
@@ -63,7 +63,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api")
                     .route("/coords", web::post().to(update_location))
-                    .route("/coords", web::get().to(let_locations))
+                    .route("/coords", web::get().to(get_locations))
                     .route("/coords/{name}", web::get().to(get_user)),
             )
     })
