@@ -1,9 +1,10 @@
 use actix_web::{web, App, HttpServer};
 use clap::Parser;
-use log::{error, info};
+use log::{info};
 use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::routes::{get_user, let_locations, update_location};
 use stalk_api::AppState;
+use stalk_api::db::{check_and_create_db_file, migrate};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -35,7 +36,12 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     // Set up database connection pool
-    let database_url = format!("sqlite:{}", args.db_file.as_str());
+    let db_file = args.db_file.as_str();
+    let database_url = format!("sqlite:{}", db_file);
+    if args.migrate {
+        check_and_create_db_file(db_file);
+    }
+
     info!("Connecting to database: {}", database_url);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -43,19 +49,8 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to create pool");
     info!("Connected to database");
-
     if args.migrate {
-        let result = sqlx::migrate!("./migrations").run(&pool).await;
-        match result {
-            Ok(_) => {
-                info!("Database migrated to file {}", database_url);
-                std::process::exit(0);
-            }
-            Err(e) => {
-                error!("Database migration failed: {}", e);
-                std::process::exit(1);
-            }
-        }
+        migrate(db_file, &pool).await
     }
 
     let host = if args.public { "0.0.0.0" } else { "127.0.0.1" };
