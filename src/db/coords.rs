@@ -137,7 +137,6 @@ mod tests {
         pool
     }
 
-
     #[sqlx::test]
     async fn test_get_specific_user_coords_empty_db() {
         let pool = setup_test_db().await;
@@ -154,7 +153,7 @@ mod tests {
             name: "testuser".to_string(),
             latitude: 59.32721,
             longitude: 18.10710,
-            timestamp: None,  // No insertions of timestamp through API
+            timestamp: None, // No insertions of timestamp through API
         };
 
         // Insert using your upsert function
@@ -183,17 +182,19 @@ mod tests {
             r#"
             INSERT INTO user_cords (name, latitude, longitude, timestamp)
             VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-2 day')))
-            "#
+            "#,
         )
-            .bind("olduser")
-            .bind(59.32721)
-            .bind(18.10710)
-            .execute(&pool)
-            .await
-            .unwrap();
+        .bind("olduser")
+        .bind(59.32721)
+        .bind(18.10710)
+        .execute(&pool)
+        .await
+        .unwrap();
 
         // Should return None because the record is older than 1 day
-        let result = get_specific_user_coords_time_limited(&pool, "olduser").await.unwrap();
+        let result = get_specific_user_coords_time_limited(&pool, "olduser")
+            .await
+            .unwrap();
         assert!(result.is_none());
         let all_find = get_specific_user_coords(&pool, "olduser").await.unwrap();
         assert!(!all_find.is_none());
