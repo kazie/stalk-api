@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    versioning-strategy: "auto"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    # Configure version updates for minor and patch updates only
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
