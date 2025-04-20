@@ -4,15 +4,17 @@ use sqlx::{Pool, Sqlite};
 pub fn check_and_create_db_file(db_file: &str) {
     let db_path = std::path::Path::new(db_file);
     if db_path.exists() {
-        error!("Database file '{}' already exists. Migration is only for new databases.", db_file);
+        error!(
+            "Database file '{}' already exists. Migration is only for new databases.",
+            db_file
+        );
         std::process::exit(1);
     }
     // Create empty database file
-    let _ = std::fs::File::create(db_file)
-        .map_err(|e| {
-            error!("Failed to create database file: {}", e);
-            std::process::exit(1);
-        });
+    let _ = std::fs::File::create(db_file).map_err(|e| {
+        error!("Failed to create database file: {}", e);
+        std::process::exit(1);
+    });
     info!("Created empty database file '{}'", db_file);
 }
 

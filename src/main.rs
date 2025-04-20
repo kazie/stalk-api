@@ -1,10 +1,10 @@
 use actix_web::{web, App, HttpServer};
 use clap::Parser;
-use log::{info};
+use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
-use stalk_api::routes::{get_user, get_locations, update_location};
-use stalk_api::AppState;
 use stalk_api::db::{check_and_create_db_file, migrate};
+use stalk_api::routes::{get_locations, get_user, update_location};
+use stalk_api::AppState;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
