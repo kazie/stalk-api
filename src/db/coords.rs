@@ -174,6 +174,61 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn test_get_specific_user_check_casing_no_matter() {
+        let pool = setup_test_db().await;
+        const ORIGINAL_NAME: &str = "testuser";
+
+        // Insert test data
+        let test_user = UserCoords {
+            name: ORIGINAL_NAME.to_string(),
+            latitude: 59.32721,
+            longitude: 18.10710,
+            timestamp: None, // No insertions of timestamp through API
+        };
+
+        // Insert using your upsert function
+        let inserted = upsert_coords(&pool, &test_user).await.unwrap();
+        assert_eq!(inserted.name, test_user.name);
+        assert_eq!(inserted.latitude, test_user.latitude);
+        assert_eq!(inserted.longitude, test_user.longitude);
+
+        // Test retrieval
+        let retrieved =
+            get_specific_user_coords_time_limited(&pool, &test_user.name.to_ascii_uppercase())
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(retrieved.name, ORIGINAL_NAME);
+        assert_eq!(retrieved.latitude, test_user.latitude);
+        assert_eq!(retrieved.longitude, test_user.longitude);
+
+        // Insert test data
+        let test_user = UserCoords {
+            name: "TesTUseR".to_string(),
+            latitude: 57.32721,
+            longitude: 19.10710,
+            timestamp: None, // No insertions of timestamp through API
+        };
+
+        // Insert using your upsert function
+        let inserted = upsert_coords(&pool, &test_user).await.unwrap();
+        assert_eq!(inserted.name, ORIGINAL_NAME);
+        assert_eq!(inserted.latitude, test_user.latitude);
+        assert_eq!(inserted.longitude, test_user.longitude);
+
+        let retrieved =
+            get_specific_user_coords_time_limited(&pool, &test_user.name.to_ascii_uppercase())
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(retrieved.name, ORIGINAL_NAME);
+        assert_eq!(retrieved.latitude, test_user.latitude);
+        assert_eq!(retrieved.longitude, test_user.longitude);
+    }
+
+    #[sqlx::test]
     async fn test_expired_coords_not_returned() {
         let pool = setup_test_db().await;
 

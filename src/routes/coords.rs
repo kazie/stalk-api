@@ -1,6 +1,4 @@
-use crate::db::{
-    get_all_cords_time_limited, get_specific_user_coords, upsert_coords,
-};
+use crate::db::{get_all_cords_time_limited, get_specific_user_coords, upsert_coords};
 use crate::models::UserCoords;
 use crate::AppState;
 use actix_web::web::{Data, Json, Path};
