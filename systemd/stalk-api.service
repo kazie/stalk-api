@@ -1,0 +1,14 @@
+[Unit]
+Description=Stalk API Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/your/app/directory
+ExecStart=/path/to/your/stalk-api
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target
