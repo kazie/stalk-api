@@ -1,4 +1,6 @@
-use crate::db::{get_all_cords, get_specific_user_coords, upsert_coords};
+use crate::db::{
+    get_all_cords_time_limited, get_specific_user_coords, upsert_coords,
+};
 use crate::models::UserCoords;
 use crate::AppState;
 use actix_web::web::{Data, Json, Path};
@@ -24,7 +26,7 @@ pub async fn update_location(
 // Handler for getting all items
 pub async fn get_locations(state: Data<AppState>) -> impl Responder {
     debug!("Get all user coords");
-    let result = get_all_cords(&state.db).await;
+    let result = get_all_cords_time_limited(&state.db).await;
 
     match result {
         Ok(coords) => HttpResponse::Ok().json(coords),

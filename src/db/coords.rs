@@ -55,7 +55,7 @@ pub async fn get_all_cords_time_limited(db: &Pool<Sqlite>) -> Result<Vec<UserCoo
             longitude as "longitude!: f64",
             timestamp as "timestamp!: String"
         FROM user_cords
-        WHERE timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-1 day'))
+        WHERE timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))
         LIMIT 20; -- If more users, create streaming or something, lol
         "#
     )
@@ -98,7 +98,7 @@ pub async fn get_specific_user_coords_time_limited(
             timestamp as "timestamp!: String"
         FROM user_cords
         WHERE name = ?  -- uniq index, so limited to 1 answer
-        AND timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-1 day'))
+        AND timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))
         "#,
         username
     )
