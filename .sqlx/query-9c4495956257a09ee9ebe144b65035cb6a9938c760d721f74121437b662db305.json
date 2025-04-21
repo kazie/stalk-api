@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_cords\n        WHERE name = ?  -- uniq index, so limited to 1 answer\n        ",
+  "query": "\n        SELECT\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_coords\n        WHERE name = ?  -- uniq index, so limited to 1 answer\n        AND timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))\n        ",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "1225d1c48394e402140e252773cb3dcd181973b81cf8e9add5c97b1670a00cf4"
+  "hash": "9c4495956257a09ee9ebe144b65035cb6a9938c760d721f74121437b662db305"
 }

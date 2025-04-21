@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS user_cords
+CREATE TABLE IF NOT EXISTS user_coords
 (
     name      TEXT COLLATE NOCASE PRIMARY KEY, -- username is the primary key, simple.
     latitude  REAL NOT NULL,

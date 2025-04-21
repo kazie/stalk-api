@@ -8,7 +8,7 @@ pub async fn upsert_coords(
     sqlx::query_as!(
         UserCoords,
         r#"
-        INSERT INTO user_cords (name, latitude, longitude)
+        INSERT INTO user_coords (name, latitude, longitude)
         VALUES (?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             latitude = excluded.latitude,
@@ -37,7 +37,7 @@ pub async fn get_all_cords(db: &Pool<Sqlite>) -> Result<Vec<UserCoords>, Error> 
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
             timestamp as "timestamp!: String"
-        FROM user_cords
+        FROM user_coords
         LIMIT 20; -- If more users, create streaming or something, lol
         "#
     )
@@ -54,7 +54,7 @@ pub async fn get_all_cords_time_limited(db: &Pool<Sqlite>) -> Result<Vec<UserCoo
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
             timestamp as "timestamp!: String"
-        FROM user_cords
+        FROM user_coords
         WHERE timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))
         LIMIT 20; -- If more users, create streaming or something, lol
         "#
@@ -75,7 +75,7 @@ pub async fn get_specific_user_coords(
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
             timestamp as "timestamp!: String"
-        FROM user_cords
+        FROM user_coords
         WHERE name = ?  -- uniq index, so limited to 1 answer
         "#,
         username
@@ -96,7 +96,7 @@ pub async fn get_specific_user_coords_time_limited(
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
             timestamp as "timestamp!: String"
-        FROM user_cords
+        FROM user_coords
         WHERE name = ?  -- uniq index, so limited to 1 answer
         AND timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))
         "#,
@@ -235,7 +235,7 @@ mod tests {
         // Directly insert an expired record using SQL
         sqlx::query(
             r#"
-            INSERT INTO user_cords (name, latitude, longitude, timestamp)
+            INSERT INTO user_coords (name, latitude, longitude, timestamp)
             VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-2 day')))
             "#,
         )

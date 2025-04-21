@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_cords\n        LIMIT 20; -- If more users, create streaming or something, lol\n        ",
+  "query": "\n        SELECT\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_coords\n        WHERE timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))\n        LIMIT 20; -- If more users, create streaming or something, lol\n        ",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "2b30445803496c79a475e9e9dccd10d6dd13f5d5496d4505267c817c3b4cf996"
+  "hash": "74b464a347c5e98d8105793af78c769e738fc44cc8a941636f61a415df69c28d"
 }

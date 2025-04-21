@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        INSERT INTO user_cords (name, latitude, longitude)\n        VALUES (?, ?, ?)\n        ON CONFLICT(name) DO UPDATE SET\n            latitude = excluded.latitude,\n            longitude = excluded.longitude,\n            timestamp = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\n        RETURNING\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        ",
+  "query": "\n        INSERT INTO user_coords (name, latitude, longitude)\n        VALUES (?, ?, ?)\n        ON CONFLICT(name) DO UPDATE SET\n            latitude = excluded.latitude,\n            longitude = excluded.longitude,\n            timestamp = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\n        RETURNING\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        ",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "e22cb353467254ee8fc36b64505aa540aeb51898b01a452072de3c09299b4da0"
+  "hash": "4479bcf973811f052ee3ce49223cd4b2932d8d0abb79a371492b1ef1550ff020"
 }
