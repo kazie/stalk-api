@@ -1,4 +1,9 @@
-use actix_web::{web, App, HttpServer};
+use std::env;
+use actix_web::{web, App, Error, HttpServer};
+use actix_web::dev::ServiceRequest;
+use actix_web::error::ErrorUnauthorized;
+use actix_web_httpauth::extractors::bearer::BearerAuth;
+use actix_web_httpauth::middleware::HttpAuthentication;
 use clap::Parser;
 use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -25,6 +30,16 @@ struct Args {
     #[arg(short, long, default_value = "coords.sqlite")]
     db_file: String,
 }
+
+async fn validator(req: ServiceRequest, credentials: BearerAuth) -> Result<ServiceRequest, (Error, ServiceRequest)> {
+    let token = env::var("API_TOKEN").expect("API_TOKEN must be set");
+    if credentials.token() == token {
+        Ok(req)
+    } else {
+        Err((ErrorUnauthorized("invalid token"), req))
+    }
+}
+
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -58,14 +73,19 @@ async fn main() -> std::io::Result<()> {
     info!("Starting server on {}", bind_addr);
     // Start HTTP server
     HttpServer::new(move || {
+        let auth = HttpAuthentication::bearer(validator);
         App::new()
             .app_data(web::Data::new(AppState { db: pool.clone() }))
             .service(
                 web::scope("/api")
-                    .route("/coords", web::post().to(update_location))
-                    .route("/coords", web::get().to(get_locations))
-                    .route("/coords/{name}", web::get().to(get_user)),
+                    .service(
+                        web::resource("/coords")
+                            .route(web::post().to(update_location).wrap(auth))
+                            .route(web::get().to(get_locations))
+                    )
+                    .service(web::resource("/coords/{name}").route(web::get().to(get_user)))
             )
+
     })
     .bind(bind_addr)?
     .run()
