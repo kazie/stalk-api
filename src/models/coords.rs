@@ -50,3 +50,46 @@ pub fn validate_and_normalize(input: NewUserCoords) -> Result<UserCoords, String
         timestamp: None, // server controls timestamp
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_trims_and_nfc() {
+        let name = "  Café  ";
+        let normalized = normalize_name(name);
+        assert_eq!(normalized, "Café");
+    }
+
+    #[test]
+    fn validate_accepts_valid_input() {
+        let input = NewUserCoords { name: "Alice".into(), latitude: 10.0, longitude: -20.0 };
+        let out = validate_and_normalize(input).unwrap();
+        assert_eq!(out.name, "Alice");
+        assert_eq!(out.latitude, 10.0);
+        assert_eq!(out.longitude, -20.0);
+        assert!(out.timestamp.is_none());
+    }
+
+    #[test]
+    fn validate_rejects_non_finite() {
+        let input = NewUserCoords { name: "Bob".into(), latitude: f64::NAN, longitude: 0.0 };
+        assert!(validate_and_normalize(input).is_err());
+        let input = NewUserCoords { name: "Bob".into(), latitude: 0.0, longitude: f64::INFINITY };
+        assert!(validate_and_normalize(input).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range() {
+        assert!(validate_and_normalize(NewUserCoords { name: "A".into(), latitude: 91.0, longitude: 0.0 }).is_err());
+        assert!(validate_and_normalize(NewUserCoords { name: "A".into(), latitude: -91.0, longitude: 0.0 }).is_err());
+        assert!(validate_and_normalize(NewUserCoords { name: "A".into(), latitude: 0.0, longitude: 181.0 }).is_err());
+        assert!(validate_and_normalize(NewUserCoords { name: "A".into(), latitude: 0.0, longitude: -181.0 }).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_empty_name_after_trim() {
+        assert!(validate_and_normalize(NewUserCoords { name: "   ".into(), latitude: 0.0, longitude: 0.0 }).is_err());
+    }
+}
