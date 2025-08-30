@@ -88,12 +88,13 @@ async fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
     };
-    // Start HTTP server
-    HttpServer::new(move || {
+    // Start HTTP server and set up graceful shutdown
+    let pool_clone = pool.clone();
+    let server = HttpServer::new(move || {
         let auth = HttpAuthentication::bearer(validator);
         App::new()
             .app_data(web::Data::new(AppState {
-                db: pool.clone(),
+                db: pool_clone.clone(),
                 auth_token: token.clone(),
             }))
             // Public health endpoint (no auth)
@@ -108,7 +109,46 @@ async fn main() -> std::io::Result<()> {
                     .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
             )
     })
+    .shutdown_timeout(5)
+    .disable_signals()
     .bind(bind_addr)?
-    .run()
-    .await
+    .run();
+
+    let handle = server.handle();
+
+    // Signal handling tasks to stop the server gracefully
+    {
+        let handle = handle.clone();
+        actix_web::rt::spawn(async move {
+            let _ = actix_web::rt::signal::ctrl_c().await;
+            info!("Shutdown signal (Ctrl+C) received, stopping server gracefully...");
+            handle.stop(true).await;
+        });
+    }
+
+    #[cfg(unix)]
+    {
+        use actix_web::rt::signal::unix::{signal, SignalKind};
+        let handle = handle.clone();
+        actix_web::rt::spawn(async move {
+            match signal(SignalKind::terminate()) {
+                Ok(mut sigterm) => {
+                    let _ = sigterm.recv().await;
+                    info!("SIGTERM received, stopping server gracefully...");
+                    handle.stop(true).await;
+                }
+                Err(e) => {
+                    info!("Failed to install SIGTERM handler: {e}");
+                }
+            }
+        });
+    }
+
+    // Wait for server to exit
+    let result = server.await;
+
+    // Close the database pool after server stops
+    pool.close().await;
+
+    result
 }
