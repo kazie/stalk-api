@@ -3,7 +3,7 @@ use sqlx::{Error, Pool, Sqlite};
 
 pub async fn upsert_coords(
     db: &Pool<Sqlite>,
-    user_cords: &UserCoords,
+    user_coords: &UserCoords,
 ) -> Result<UserCoords, Error> {
     sqlx::query_as!(
         UserCoords,
@@ -20,15 +20,15 @@ pub async fn upsert_coords(
             longitude as "longitude!: f64",
             timestamp as "timestamp!: String"
         "#,
-        user_cords.name,
-        user_cords.latitude,
-        user_cords.longitude
+        user_coords.name,
+        user_coords.latitude,
+        user_coords.longitude
     )
     .fetch_one(db)
     .await
 }
 
-pub async fn get_all_cords(db: &Pool<Sqlite>) -> Result<Vec<UserCoords>, Error> {
+pub async fn get_all_coords(db: &Pool<Sqlite>) -> Result<Vec<UserCoords>, Error> {
     sqlx::query_as!(
         UserCoords,
         r#"
@@ -45,7 +45,7 @@ pub async fn get_all_cords(db: &Pool<Sqlite>) -> Result<Vec<UserCoords>, Error> 
     .await
 }
 
-pub async fn get_all_cords_time_limited(db: &Pool<Sqlite>) -> Result<Vec<UserCoords>, Error> {
+pub async fn get_all_coords_time_limited(db: &Pool<Sqlite>) -> Result<Vec<UserCoords>, Error> {
     sqlx::query_as!(
         UserCoords,
         r#"

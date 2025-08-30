@@ -1,4 +1,4 @@
-use crate::db::{get_all_cords_time_limited, get_specific_user_coords, upsert_coords};
+use crate::db::{get_all_coords_time_limited, get_specific_user_coords, upsert_coords};
 use crate::models::{validate_and_normalize, NewUserCoords};
 use crate::models::UserCoords;
 use crate::models::normalize_name;
@@ -32,7 +32,7 @@ pub async fn update_location(
 // Handler for getting all items
 pub async fn get_locations(state: Data<AppState>) -> impl Responder {
     debug!("Get all user coords");
-    let result = get_all_cords_time_limited(&state.db).await;
+    let result = get_all_coords_time_limited(&state.db).await;
 
     match result {
         Ok(coords) => HttpResponse::Ok().json(coords),
