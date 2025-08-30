@@ -8,7 +8,7 @@ use clap::Parser;
 use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::db::{check_and_create_db_file, migrate};
-use stalk_api::routes::{get_locations, get_user, update_location};
+use stalk_api::routes::{get_locations, get_user, update_location, health};
 use stalk_api::AppState;
 
 #[derive(Parser, Debug)]
@@ -88,6 +88,8 @@ async fn main() -> std::io::Result<()> {
         let auth = HttpAuthentication::bearer(validator);
         App::new()
             .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token.clone() }))
+            // Public health endpoint (no auth)
+            .service(web::resource("/health").route(web::get().to(health)))
             .service(
                 web::scope("/api")
                     .service(

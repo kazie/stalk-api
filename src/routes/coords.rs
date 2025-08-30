@@ -5,6 +5,7 @@ use crate::models::normalize_name;
 use crate::AppState;
 use actix_web::web::{Data, Json, Path};
 use actix_web::{HttpResponse, Responder};
+use actix_web::http::header::LOCATION;
 use log::{debug, error};
 
 pub async fn update_location(
@@ -18,10 +19,28 @@ pub async fn update_location(
         Err(msg) => return HttpResponse::BadRequest().body(msg),
     };
 
+    // Check if the user already exists to decide between 200 OK (update) and 201 Created (create)
+    let existed = match get_specific_user_coords(&state.db, &user.name).await {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => {
+            error!("Database error during existence check: {:?}", e);
+            return HttpResponse::InternalServerError().body(e.to_string());
+        }
+    };
+
     let result = upsert_coords(&state.db, &user).await;
 
     match result {
-        Ok(coords) => HttpResponse::Ok().json(coords),
+        Ok(coords) => {
+            if existed {
+                HttpResponse::Ok().json(coords)
+            } else {
+                HttpResponse::Created()
+                    .insert_header((LOCATION, format!("/api/coords/{}", coords.name)))
+                    .json(coords)
+            }
+        }
         Err(e) => {
             error!("Database error: {:?}", e);
             HttpResponse::InternalServerError().body(e.to_string())
