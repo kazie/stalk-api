@@ -19,12 +19,46 @@ pub struct NewUserCoords {
     pub longitude: f64,
 }
 
-// Normalize name: trim and NFC
+/// Normalize a user-provided name by trimming surrounding whitespace and
+/// applying Unicode NFC normalization.
+///
+/// This ensures that visually equivalent strings are normalized to a canonical
+/// form, which is important for consistent lookups and uniqueness checks.
+///
+/// Examples
+///
+/// ```
+/// use stalk_api::models::normalize_name;
+///
+/// // Trimming
+/// assert_eq!(normalize_name("  Alice  "), "Alice");
+///
+/// // Unicode canonical composition ("Cafe" + combining acute accent -> "Café")
+/// let decomposed = "Cafe\u{301}"; // "e" + combining acute
+/// assert_eq!(normalize_name(decomposed), "Café");
+/// ```
 pub fn normalize_name(name: &str) -> String {
     name.trim().nfc().collect::<String>()
 }
 
-// Validate and normalize incoming payload into a UserCoords suitable for DB upsert
+/// Validate and normalize an incoming payload into a `UserCoords` suitable for DB upsert.
+///
+/// Rules enforced:
+/// - latitude must be finite and within [-90, 90]
+/// - longitude must be finite and within [-180, 180]
+/// - name must be non-empty after trimming and NFC normalization
+/// - timestamp is controlled by the server
+///
+/// Examples
+///
+/// ```
+/// use stalk_api::models::{validate_and_normalize, NewUserCoords};
+///
+/// let input = NewUserCoords { name: " Alice ".into(), latitude: 10.0, longitude: 20.0 };
+/// let out = validate_and_normalize(input).expect("valid input");
+/// assert_eq!(out.name, "Alice");
+/// assert!(out.timestamp.is_none());
+/// ```
 pub fn validate_and_normalize(input: NewUserCoords) -> Result<UserCoords, String> {
     // Validate latitude and longitude ranges and finiteness
     if !input.latitude.is_finite() || !input.longitude.is_finite() {

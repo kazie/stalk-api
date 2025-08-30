@@ -1,5 +1,7 @@
 use crate::AppState;
-use crate::db::{get_all_coords_time_limited, get_specific_user_coords, upsert_coords};
+use crate::db::{
+    delete_user_by_name, get_all_coords_time_limited, get_specific_user_coords, upsert_coords,
+};
 use crate::models::UserCoords;
 use crate::models::normalize_name;
 use crate::models::{NewUserCoords, validate_and_normalize};
@@ -68,5 +70,20 @@ pub async fn get_user(state: Data<AppState>, name: Path<String>) -> impl Respond
         Ok(Some(coords)) => HttpResponse::Ok().json(coords),
         Ok(None) => HttpResponse::NotFound().json("Item not found"),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+pub async fn delete_user(state: Data<AppState>, name: Path<String>) -> impl Responder {
+    let username_raw = name.as_str();
+    let username = normalize_name(username_raw);
+    debug!("Deleting user: {username}");
+
+    match delete_user_by_name(&state.db, &username).await {
+        Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(false) => HttpResponse::NotFound().json("Item not found"),
+        Err(e) => {
+            error!("Database error during delete: {e:?}");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
     }
 }

@@ -106,6 +106,19 @@ pub async fn get_specific_user_coords_time_limited(
     .await
 }
 
+pub async fn delete_user_by_name(db: &Pool<Sqlite>, username: &str) -> Result<bool, Error> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM user_coords
+        WHERE name = ?
+        "#,
+    )
+    .bind(username)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

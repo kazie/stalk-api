@@ -5,7 +5,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use awc::Client;
 use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::AppState;
-use stalk_api::routes::{get_locations, get_user, health, update_location};
+use stalk_api::routes::{delete_user, get_locations, get_user, health, update_location};
 use std::net::TcpListener;
 
 // Local auth validator mirroring main.rs behavior (checks AppState.auth_token)
@@ -268,4 +268,124 @@ async fn smoke_boot_server_and_health() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "ok");
+}
+
+#[actix_web::test]
+async fn delete_requires_auth() {
+    let (pool, token) = build_pool_and_token().await;
+    let auth = HttpAuthentication::bearer(validator);
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token,
+            }))
+            .service(web::resource("/health").route(web::get().to(health)))
+            .service(
+                web::scope("/api")
+                    .service(
+                        web::resource("/coords")
+                            .route(web::post().to(update_location).wrap(auth.clone()))
+                            .route(web::get().to(get_locations)),
+                    )
+                    .service(
+                        web::resource("/coords/{name}")
+                            .route(web::get().to(get_user))
+                            .route(web::delete().to(delete_user).wrap(auth.clone())),
+                    ),
+            ),
+    )
+    .await;
+
+    // No auth -> 401
+    let req = test::TestRequest::delete()
+        .uri("/api/coords/any")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // Wrong token -> 401
+    let req = test::TestRequest::delete()
+        .uri("/api/coords/any")
+        .insert_header((header::AUTHORIZATION, "Bearer wrong"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[actix_web::test]
+async fn delete_flow_create_then_delete_then_404() {
+    let (pool, token) = build_pool_and_token().await;
+    let auth = HttpAuthentication::bearer(validator);
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token,
+            }))
+            .service(web::resource("/health").route(web::get().to(health)))
+            .service(
+                web::scope("/api")
+                    .service(
+                        web::resource("/coords")
+                            .route(web::post().to(update_location).wrap(auth.clone()))
+                            .route(web::get().to(get_locations)),
+                    )
+                    .service(
+                        web::resource("/coords/{name}")
+                            .route(web::get().to(get_user))
+                            .route(web::delete().to(delete_user).wrap(auth.clone())),
+                    ),
+            ),
+    )
+    .await;
+
+    // Create user
+    let payload = serde_json::json!({
+        "name": "Charlie",
+        "latitude": 12.34,
+        "longitude": 56.78
+    });
+    let req = test::TestRequest::post()
+        .uri("/api/coords")
+        .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+        .set_json(&payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(matches!(
+        resp.status(),
+        StatusCode::CREATED | StatusCode::OK
+    ));
+
+    // Ensure GET returns 200 (lowercase path, name normalization makes it match)
+    let req = test::TestRequest::get()
+        .uri("/api/coords/charlie")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // DELETE using different case, expect 204
+    let req = test::TestRequest::delete()
+        .uri("/api/coords/ChArLiE")
+        .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    // Now GET should be 404
+    let req = test::TestRequest::get()
+        .uri("/api/coords/charlie")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // Deleting again should be 404
+    let req = test::TestRequest::delete()
+        .uri("/api/coords/charlie")
+        .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

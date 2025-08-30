@@ -8,7 +8,7 @@ use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::AppState;
 use stalk_api::db::{check_and_create_db_file, migrate};
-use stalk_api::routes::{get_locations, get_user, health, update_location};
+use stalk_api::routes::{delete_user, get_locations, get_user, health, update_location};
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -103,10 +103,14 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/api")
                     .service(
                         web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth))
+                            .route(web::post().to(update_location).wrap(auth.clone()))
                             .route(web::get().to(get_locations)),
                     )
-                    .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
+                    .service(
+                        web::resource("/coords/{name}")
+                            .route(web::get().to(get_user))
+                            .route(web::delete().to(delete_user).wrap(auth)),
+                    ),
             )
     })
     .shutdown_timeout(5)
@@ -128,7 +132,7 @@ async fn main() -> std::io::Result<()> {
 
     #[cfg(unix)]
     {
-        use actix_web::rt::signal::unix::{signal, SignalKind};
+        use actix_web::rt::signal::unix::{SignalKind, signal};
         let handle = handle.clone();
         actix_web::rt::spawn(async move {
             match signal(SignalKind::terminate()) {
