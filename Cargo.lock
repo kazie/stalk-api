@@ -2488,6 +2488,7 @@ dependencies = [
  "log",
  "serde",
  "sqlx",
+ "unicode-normalization",
 ]
 
 [[package]]
