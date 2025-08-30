@@ -32,11 +32,15 @@ struct Args {
 }
 
 async fn validator(req: ServiceRequest, credentials: BearerAuth) -> Result<ServiceRequest, (Error, ServiceRequest)> {
-    let token = env::var("API_TOKEN").expect("API_TOKEN must be set");
-    if credentials.token() == token {
-        Ok(req)
+    // Read the token from application state loaded at startup
+    if let Some(state) = req.app_data::<web::Data<AppState>>() {
+        if credentials.token() == state.auth_token {
+            Ok(req)
+        } else {
+            Err((ErrorUnauthorized("invalid token"), req))
+        }
     } else {
-        Err((ErrorUnauthorized("invalid token"), req))
+        Err((ErrorUnauthorized("authentication not configured"), req))
     }
 }
 
@@ -71,11 +75,19 @@ async fn main() -> std::io::Result<()> {
     let host = if args.public { "0.0.0.0" } else { "127.0.0.1" };
     let bind_addr = format!("{}:{}", host, args.port);
     info!("Starting server on {}", bind_addr);
+    // Load API token once at startup
+    let token = match env::var("API_TOKEN") {
+        Ok(t) if !t.trim().is_empty() => t,
+        _ => {
+            eprintln!("Configuration error: API_TOKEN is not set or is empty. Please set the environment variable and restart the service.");
+            std::process::exit(1);
+        }
+    };
     // Start HTTP server
     HttpServer::new(move || {
         let auth = HttpAuthentication::bearer(validator);
         App::new()
-            .app_data(web::Data::new(AppState { db: pool.clone() }))
+            .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token.clone() }))
             .service(
                 web::scope("/api")
                     .service(
