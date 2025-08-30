@@ -252,6 +252,6 @@ mod tests {
             .unwrap();
         assert!(result.is_none());
         let all_find = get_specific_user_coords(&pool, "olduser").await.unwrap();
-        assert!(!all_find.is_none());
+        assert!(all_find.is_some());
     }
 }

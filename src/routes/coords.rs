@@ -1,18 +1,15 @@
+use crate::AppState;
 use crate::db::{get_all_coords_time_limited, get_specific_user_coords, upsert_coords};
-use crate::models::{validate_and_normalize, NewUserCoords};
 use crate::models::UserCoords;
 use crate::models::normalize_name;
-use crate::AppState;
+use crate::models::{NewUserCoords, validate_and_normalize};
+use actix_web::http::header::LOCATION;
 use actix_web::web::{Data, Json, Path};
 use actix_web::{HttpResponse, Responder};
-use actix_web::http::header::LOCATION;
 use log::{debug, error};
 
-pub async fn update_location(
-    state: Data<AppState>,
-    body: Json<NewUserCoords>,
-) -> impl Responder {
-    debug!("Updating user coords: {:?}", body);
+pub async fn update_location(state: Data<AppState>, body: Json<NewUserCoords>) -> impl Responder {
+    debug!("Updating user coords: {body:?}");
     let validated: Result<UserCoords, String> = validate_and_normalize(body.into_inner());
     let user = match validated {
         Ok(u) => u,
@@ -24,7 +21,7 @@ pub async fn update_location(
         Ok(Some(_)) => true,
         Ok(None) => false,
         Err(e) => {
-            error!("Database error during existence check: {:?}", e);
+            error!("Database error during existence check: {e:?}");
             return HttpResponse::InternalServerError().body(e.to_string());
         }
     };
@@ -36,13 +33,14 @@ pub async fn update_location(
             if existed {
                 HttpResponse::Ok().json(coords)
             } else {
+                let name = coords.name.clone();
                 HttpResponse::Created()
-                    .insert_header((LOCATION, format!("/api/coords/{}", coords.name)))
+                    .insert_header((LOCATION, format!("/api/coords/{name}")))
                     .json(coords)
             }
         }
         Err(e) => {
-            error!("Database error: {:?}", e);
+            error!("Database error: {e:?}");
             HttpResponse::InternalServerError().body(e.to_string())
         }
     }
@@ -63,7 +61,7 @@ pub async fn get_locations(state: Data<AppState>) -> impl Responder {
 pub async fn get_user(state: Data<AppState>, name: Path<String>) -> impl Responder {
     let username_raw = name.as_str();
     let username = normalize_name(username_raw);
-    debug!("Searching coords for user: {}", username);
+    debug!("Searching coords for user: {username}");
     let result = get_specific_user_coords(&state.db, &username).await;
 
     match result {

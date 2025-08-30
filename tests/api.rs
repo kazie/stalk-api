@@ -1,15 +1,18 @@
-use actix_web::{test, web, App, HttpServer};
-use actix_web::http::{header, Method, StatusCode};
+use actix_web::http::{Method, StatusCode, header};
+use actix_web::{App, HttpServer, test, web};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
-use sqlx::sqlite::SqlitePoolOptions;
-use stalk_api::routes::{get_locations, get_user, update_location, health};
-use stalk_api::AppState;
 use awc::Client;
+use sqlx::sqlite::SqlitePoolOptions;
+use stalk_api::AppState;
+use stalk_api::routes::{get_locations, get_user, health, update_location};
 use std::net::TcpListener;
 
 // Local auth validator mirroring main.rs behavior (checks AppState.auth_token)
-async fn validator(req: actix_web::dev::ServiceRequest, credentials: BearerAuth) -> Result<actix_web::dev::ServiceRequest, (actix_web::Error, actix_web::dev::ServiceRequest)> {
+async fn validator(
+    req: actix_web::dev::ServiceRequest,
+    credentials: BearerAuth,
+) -> Result<actix_web::dev::ServiceRequest, (actix_web::Error, actix_web::dev::ServiceRequest)> {
     if let Some(state) = req.app_data::<web::Data<AppState>>() {
         if credentials.token() == state.auth_token {
             Ok(req)
@@ -17,7 +20,10 @@ async fn validator(req: actix_web::dev::ServiceRequest, credentials: BearerAuth)
             Err((actix_web::error::ErrorUnauthorized("invalid token"), req))
         }
     } else {
-        Err((actix_web::error::ErrorUnauthorized("authentication not configured"), req))
+        Err((
+            actix_web::error::ErrorUnauthorized("authentication not configured"),
+            req,
+        ))
     }
 }
 
@@ -29,7 +35,10 @@ async fn build_pool_and_token() -> (sqlx::Pool<sqlx::Sqlite>, String) {
         .expect("Failed to create in-memory pool");
 
     // Run migrations
-    sqlx::migrate!("./migrations").run(&pool).await.expect("migrate");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrate");
 
     (pool, "test-token".to_string())
 }
@@ -41,7 +50,10 @@ async fn health_returns_ok_json() {
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token }))
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token,
+            }))
             .service(web::resource("/health").route(web::get().to(health)))
             .service(
                 web::scope("/api")
@@ -69,7 +81,10 @@ async fn post_coords_requires_auth() {
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token }))
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token,
+            }))
             .service(web::resource("/health").route(web::get().to(health)))
             .service(
                 web::scope("/api")
@@ -90,7 +105,10 @@ async fn post_coords_requires_auth() {
     });
 
     // No auth -> 401
-    let req = test::TestRequest::post().uri("/api/coords").set_json(&payload).to_request();
+    let req = test::TestRequest::post()
+        .uri("/api/coords")
+        .set_json(&payload)
+        .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
@@ -130,7 +148,10 @@ async fn get_user_happy_path_and_not_found_and_case_insensitive() {
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token }))
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token,
+            }))
             .service(web::resource("/health").route(web::get().to(health)))
             .service(
                 web::scope("/api")
@@ -161,7 +182,10 @@ async fn get_user_happy_path_and_not_found_and_case_insensitive() {
         .set_json(&payload)
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert!(matches!(resp.status(), StatusCode::CREATED | StatusCode::OK));
+    assert!(matches!(
+        resp.status(),
+        StatusCode::CREATED | StatusCode::OK
+    ));
 
     // Fetch with different case
     let req = test::TestRequest::get().uri("/api/coords/bOb").to_request();
@@ -178,7 +202,10 @@ async fn options_does_not_500() {
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token }))
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token,
+            }))
             .service(web::resource("/health").route(web::get().to(health)))
             .service(
                 web::scope("/api")
@@ -192,7 +219,10 @@ async fn options_does_not_500() {
     )
     .await;
 
-    let req = test::TestRequest::default().method(Method::OPTIONS).uri("/api/coords").to_request();
+    let req = test::TestRequest::default()
+        .method(Method::OPTIONS)
+        .uri("/api/coords")
+        .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() != StatusCode::INTERNAL_SERVER_ERROR);
 }
@@ -209,7 +239,10 @@ async fn smoke_boot_server_and_health() {
     let auth = HttpAuthentication::bearer(validator);
     let server = HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token.clone() }))
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token.clone(),
+            }))
             .service(web::resource("/health").route(web::get().to(health)))
             .service(
                 web::scope("/api")
@@ -230,7 +263,7 @@ async fn smoke_boot_server_and_health() {
 
     // Call health endpoint using real HTTP client
     let client = Client::default();
-    let url = format!("http://{}/health", addr);
+    let url = format!("http://{addr}/health");
     let mut resp = client.get(url).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();

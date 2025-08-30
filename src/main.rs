@@ -1,15 +1,15 @@
-use std::env;
-use actix_web::{web, App, Error, HttpServer};
 use actix_web::dev::ServiceRequest;
 use actix_web::error::ErrorUnauthorized;
+use actix_web::{App, Error, HttpServer, web};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use clap::Parser;
 use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
-use stalk_api::db::{check_and_create_db_file, migrate};
-use stalk_api::routes::{get_locations, get_user, update_location, health};
 use stalk_api::AppState;
+use stalk_api::db::{check_and_create_db_file, migrate};
+use stalk_api::routes::{get_locations, get_user, health, update_location};
+use std::env;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -31,7 +31,10 @@ struct Args {
     db_file: String,
 }
 
-async fn validator(req: ServiceRequest, credentials: BearerAuth) -> Result<ServiceRequest, (Error, ServiceRequest)> {
+async fn validator(
+    req: ServiceRequest,
+    credentials: BearerAuth,
+) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     // Read the token from application state loaded at startup
     if let Some(state) = req.app_data::<web::Data<AppState>>() {
         if credentials.token() == state.auth_token {
@@ -44,7 +47,6 @@ async fn validator(req: ServiceRequest, credentials: BearerAuth) -> Result<Servi
     }
 }
 
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Initialize with default info level if RUST_LOG is not set
@@ -56,12 +58,12 @@ async fn main() -> std::io::Result<()> {
 
     // Set up database connection pool
     let db_file = args.db_file.as_str();
-    let database_url = format!("sqlite:{}", db_file);
+    let database_url = format!("sqlite:{db_file}");
     if args.migrate {
         check_and_create_db_file(db_file);
     }
 
-    info!("Connecting to database: {}", database_url);
+    info!("Connecting to database: {database_url}");
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect(database_url.as_str())
@@ -73,13 +75,16 @@ async fn main() -> std::io::Result<()> {
     }
 
     let host = if args.public { "0.0.0.0" } else { "127.0.0.1" };
-    let bind_addr = format!("{}:{}", host, args.port);
-    info!("Starting server on {}", bind_addr);
+    let port = args.port;
+    let bind_addr = format!("{host}:{port}");
+    info!("Starting server on {bind_addr}");
     // Load API token once at startup
     let token = match env::var("API_TOKEN") {
         Ok(t) if !t.trim().is_empty() => t,
         _ => {
-            eprintln!("Configuration error: API_TOKEN is not set or is empty. Please set the environment variable and restart the service.");
+            eprintln!(
+                "Configuration error: API_TOKEN is not set or is empty. Please set the environment variable and restart the service."
+            );
             std::process::exit(1);
         }
     };
@@ -87,7 +92,10 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let auth = HttpAuthentication::bearer(validator);
         App::new()
-            .app_data(web::Data::new(AppState { db: pool.clone(), auth_token: token.clone() }))
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token.clone(),
+            }))
             // Public health endpoint (no auth)
             .service(web::resource("/health").route(web::get().to(health)))
             .service(
@@ -95,11 +103,10 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::resource("/coords")
                             .route(web::post().to(update_location).wrap(auth))
-                            .route(web::get().to(get_locations))
+                            .route(web::get().to(get_locations)),
                     )
-                    .service(web::resource("/coords/{name}").route(web::get().to(get_user)))
+                    .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
             )
-
     })
     .bind(bind_addr)?
     .run()

@@ -51,6 +51,12 @@ jobs:
     - name: SQLx database Migrations
       run: cargo sqlx migrate run
 
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
     - name: Build
       run: cargo build
 
