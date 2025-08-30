@@ -4,11 +4,21 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    versioning-strategy: "auto"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    # Configure version updates for minor and patch updates only
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 10
+    groups:
+      non-major:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      non-major:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
