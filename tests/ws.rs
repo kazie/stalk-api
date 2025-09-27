@@ -62,17 +62,25 @@ async fn ws_all_users_stream_receives_updates() {
         .expect("post ok");
     assert!(resp.status().is_success());
 
-    // Expect to receive a WS message
-    let frame = ws.next().await.expect("one message").expect("ok frame");
-    match frame {
-        awc::ws::Frame::Text(bytes) => {
-            let text = String::from_utf8(bytes.to_vec()).unwrap();
-            let json: Value = serde_json::from_str(&text).unwrap();
-            assert_eq!(json["name"], "Alice");
-            assert_eq!(json["latitude"], 10.0);
-            assert_eq!(json["longitude"], 20.0);
+    // Expect to receive a WS text message (ignore Ping/Pong/etc.)
+    loop {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["name"], "Alice");
+                assert_eq!(json["latitude"], 10.0);
+                assert_eq!(json["longitude"], 20.0);
+                break;
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => panic!("websocket closed before text frame"),
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended before text frame"),
         }
-        other => panic!("unexpected frame: {:?}", other),
     }
 }
 
@@ -121,11 +129,22 @@ async fn ws_per_user_isolation_and_case_insensitive() {
 
     // We expect to receive only Alice updates (2 messages)
     let mut received = vec![];
-    for _ in 0..2 {
-        if let Some(Ok(awc::ws::Frame::Text(bytes))) = ws.next().await {
-            let text = String::from_utf8(bytes.to_vec()).unwrap();
-            let json: Value = serde_json::from_str(&text).unwrap();
-            received.push(json);
+    while received.len() < 2 {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                received.push(json);
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => {
+                panic!("websocket closed before expected text frames")
+            }
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended early"),
         }
     }
     assert_eq!(received.len(), 2);
@@ -175,14 +194,25 @@ async fn ws_per_user_snapshot_on_connect() {
     let url = ws_url(&base_url, "/ws/coords/SNAP");
     let (_resp, mut ws) = client.ws(url).connect().await.expect("ws connect");
 
-    if let Some(Ok(awc::ws::Frame::Text(bytes))) = ws.next().await {
-        let text = String::from_utf8(bytes.to_vec()).unwrap();
-        let json: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(json["name"], "Snap");
-        assert_eq!(json["latitude"], 42.0);
-        assert_eq!(json["longitude"], 24.0);
-    } else {
-        panic!("expected snapshot frame");
+    // Expect a snapshot text message; ignore Ping/Pong/etc.
+    loop {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["name"], "Snap");
+                assert_eq!(json["latitude"], 42.0);
+                assert_eq!(json["longitude"], 24.0);
+                break;
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => panic!("websocket closed before snapshot"),
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended before snapshot"),
+        }
     }
 }
 
@@ -232,13 +262,22 @@ async fn ws_all_users_initial_snapshot_like_updates() {
     let (_resp, mut ws) = client.ws(url).connect().await.expect("ws connect");
 
     let mut names = vec![];
-    for _ in 0..2 {
-        if let Some(Ok(awc::ws::Frame::Text(bytes))) = ws.next().await {
-            let text = String::from_utf8(bytes.to_vec()).unwrap();
-            let json: Value = serde_json::from_str(&text).unwrap();
-            names.push(json["name"].as_str().unwrap().to_string());
-        } else {
-            panic!("expected text frame");
+    while names.len() < 2 {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                names.push(json["name"].as_str().unwrap().to_string());
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => {
+                panic!("websocket closed before receiving 2 initial frames")
+            }
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended early"),
         }
     }
     names.sort();
@@ -258,13 +297,24 @@ async fn ws_all_users_initial_snapshot_like_updates() {
         .expect("post ok");
     assert!(resp.status().is_success());
 
-    if let Some(Ok(awc::ws::Frame::Text(bytes))) = ws.next().await {
-        let text = String::from_utf8(bytes.to_vec()).unwrap();
-        let json: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(json["name"], "Alice");
-        assert_eq!(json["latitude"], 9.9);
-        assert_eq!(json["longitude"], 9.9);
-    } else {
-        panic!("expected update frame after initial snapshot");
+    // Expect the next text update for Alice; ignore Ping/Pong/etc.
+    loop {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["name"], "Alice");
+                assert_eq!(json["latitude"], 9.9);
+                assert_eq!(json["longitude"], 9.9);
+                break;
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => panic!("websocket closed before update frame"),
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended before update frame"),
+        }
     }
 }

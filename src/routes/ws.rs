@@ -7,6 +7,7 @@ use actix_web::{Error as ActixError, HttpRequest, HttpResponse, get, web};
 use actix_ws::Message;
 use futures_util::StreamExt;
 use log::{debug, error, info, warn};
+use std::time::Duration;
 
 #[derive(serde::Deserialize)]
 struct WsAllUsersQuery {
@@ -103,8 +104,16 @@ pub async fn ws_coords(
     let mut updates_receiver = state.notifier.subscribe();
 
     actix_web::rt::spawn(async move {
+        let mut hb = actix_web::rt::time::interval(Duration::from_secs(30));
         loop {
             tokio::select! {
+                // Heartbeat tick
+                _ = hb.tick() => {
+                    if let Err(e) = ws_session.ping(b"ping").await {
+                        debug!("WS heartbeat send error, closing: {e:?}");
+                        break;
+                    }
+                }
                 // Receive broadcast of updates
                 update_result = updates_receiver.recv() => {
                     match update_result {
@@ -191,8 +200,16 @@ pub async fn ws_coords_user(
     let mut updates_receiver = state.notifier.subscribe();
 
     actix_web::rt::spawn(async move {
+        let mut hb = actix_web::rt::time::interval(Duration::from_secs(30));
         loop {
             tokio::select! {
+                // Heartbeat tick
+                _ = hb.tick() => {
+                    if let Err(e) = ws_session.ping(b"ping").await {
+                        debug!("WS heartbeat send error, closing: {e:?}");
+                        break;
+                    }
+                }
                 update_result = updates_receiver.recv() => {
                     match update_result {
                         Ok(coords) => {
