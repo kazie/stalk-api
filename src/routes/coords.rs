@@ -10,6 +10,22 @@ use actix_web::web::{Data, Json, Path};
 use actix_web::{HttpResponse, Responder};
 use log::{debug, error};
 
+/// Create or update a user's coordinates
+#[utoipa::path(
+    post,
+    path = "/api/coords",
+    request_body = NewUserCoords,
+    responses(
+        (status = 200, description = "Updated existing user coordinates", body = UserCoords),
+        (status = 201, description = "Created new user coordinates", body = UserCoords, headers(
+            ("Location" = String, description = "Resource location")
+        )),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(("ApiToken" = [])),
+    tag = "coords"
+)]
 pub async fn update_location(state: Data<AppState>, body: Json<NewUserCoords>) -> impl Responder {
     debug!("Updating user coords: {body:?}");
     let validated: Result<UserCoords, String> = validate_and_normalize(body.into_inner());
@@ -32,6 +48,8 @@ pub async fn update_location(state: Data<AppState>, body: Json<NewUserCoords>) -
 
     match result {
         Ok(coords) => {
+            // Publish update to websocket subscribers; ignore if there are no receivers
+            let _ = state.notifier.send(coords.clone());
             if existed {
                 HttpResponse::Ok().json(coords)
             } else {
@@ -49,6 +67,15 @@ pub async fn update_location(state: Data<AppState>, body: Json<NewUserCoords>) -
 }
 
 // Handler for getting all items
+#[utoipa::path(
+    get,
+    path = "/api/coords",
+    responses(
+        (status = 200, description = "List of current user coordinates", body = [UserCoords]),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "coords"
+)]
 pub async fn get_locations(state: Data<AppState>) -> impl Responder {
     debug!("Get all user coords");
     let result = get_all_coords_time_limited(&state.db).await;
@@ -60,6 +87,19 @@ pub async fn get_locations(state: Data<AppState>) -> impl Responder {
 }
 
 // Handler for getting a single item by ID
+#[utoipa::path(
+    get,
+    path = "/api/coords/{name}",
+    params(
+        ("name" = String, Path, description = "User name")
+    ),
+    responses(
+        (status = 200, description = "User coordinates", body = UserCoords),
+        (status = 404, description = "User not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "coords"
+)]
 pub async fn get_user(state: Data<AppState>, name: Path<String>) -> impl Responder {
     let username_raw = name.as_str();
     let username = normalize_name(username_raw);
@@ -73,6 +113,20 @@ pub async fn get_user(state: Data<AppState>, name: Path<String>) -> impl Respond
     }
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/coords/{name}",
+    params(
+        ("name" = String, Path, description = "User name")
+    ),
+    responses(
+        (status = 204, description = "User deleted"),
+        (status = 404, description = "User not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(("ApiToken" = [])),
+    tag = "coords"
+)]
 pub async fn delete_user(state: Data<AppState>, name: Path<String>) -> impl Responder {
     let username_raw = name.as_str();
     let username = normalize_name(username_raw);

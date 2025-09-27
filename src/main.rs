@@ -1,14 +1,10 @@
-use actix_web::dev::ServiceRequest;
-use actix_web::error::ErrorUnauthorized;
-use actix_web::{App, Error, HttpServer, web};
-use actix_web_httpauth::extractors::bearer::BearerAuth;
-use actix_web_httpauth::middleware::HttpAuthentication;
+use actix_web::{App, HttpServer, web};
 use clap::Parser;
 use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::AppState;
+use stalk_api::configure_api;
 use stalk_api::db::{check_and_create_db_file, migrate};
-use stalk_api::routes::{delete_user, get_locations, get_user, health, update_location};
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -29,22 +25,6 @@ struct Args {
     /// Database file to use
     #[arg(short, long, default_value = "coords.sqlite")]
     db_file: String,
-}
-
-async fn validator(
-    req: ServiceRequest,
-    credentials: BearerAuth,
-) -> Result<ServiceRequest, (Error, ServiceRequest)> {
-    // Read the token from application state loaded at startup
-    if let Some(state) = req.app_data::<web::Data<AppState>>() {
-        if credentials.token() == state.auth_token {
-            Ok(req)
-        } else {
-            Err((ErrorUnauthorized("invalid token"), req))
-        }
-    } else {
-        Err((ErrorUnauthorized("authentication not configured"), req))
-    }
 }
 
 #[actix_web::main]
@@ -90,28 +70,19 @@ async fn main() -> std::io::Result<()> {
     };
     // Start HTTP server and set up graceful shutdown
     let pool_clone = pool.clone();
+    // Create a broadcast channel for websocket notifications
+    let (coords_update_sender, _unused_coords_update_receiver) =
+        tokio::sync::broadcast::channel::<stalk_api::models::UserCoords>(1024);
+
     let server = HttpServer::new(move || {
-        let auth = HttpAuthentication::bearer(validator);
+        let coords_update_sender = coords_update_sender.clone();
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool_clone.clone(),
                 auth_token: token.clone(),
+                notifier: coords_update_sender,
             }))
-            // Public health endpoint (no auth)
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(
-                        web::resource("/coords/{name}")
-                            .route(web::get().to(get_user))
-                            .route(web::delete().to(delete_user).wrap(auth)),
-                    ),
-            )
+            .configure(configure_api)
     })
     .shutdown_timeout(5)
     .disable_signals()
