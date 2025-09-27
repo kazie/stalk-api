@@ -1,5 +1,7 @@
 mod coords;
 pub use coords::*;
+mod ws;
+pub use ws::*;
 
 use actix_web::{HttpResponse, Responder};
 use serde::Serialize;

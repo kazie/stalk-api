@@ -1,31 +1,9 @@
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpServer, test, web};
-use actix_web_httpauth::extractors::bearer::BearerAuth;
-use actix_web_httpauth::middleware::HttpAuthentication;
 use awc::Client;
 use sqlx::sqlite::SqlitePoolOptions;
-use stalk_api::AppState;
-use stalk_api::routes::{delete_user, get_locations, get_user, health, update_location};
+use stalk_api::{AppState, configure_api};
 use std::net::TcpListener;
-
-// Local auth validator mirroring main.rs behavior (checks AppState.auth_token)
-async fn validator(
-    req: actix_web::dev::ServiceRequest,
-    credentials: BearerAuth,
-) -> Result<actix_web::dev::ServiceRequest, (actix_web::Error, actix_web::dev::ServiceRequest)> {
-    if let Some(state) = req.app_data::<web::Data<AppState>>() {
-        if credentials.token() == state.auth_token {
-            Ok(req)
-        } else {
-            Err((actix_web::error::ErrorUnauthorized("invalid token"), req))
-        }
-    } else {
-        Err((
-            actix_web::error::ErrorUnauthorized("authentication not configured"),
-            req,
-        ))
-    }
-}
 
 async fn build_pool_and_token() -> (sqlx::Pool<sqlx::Sqlite>, String) {
     let pool = SqlitePoolOptions::new()
@@ -43,27 +21,22 @@ async fn build_pool_and_token() -> (sqlx::Pool<sqlx::Sqlite>, String) {
     (pool, "test-token".to_string())
 }
 
+fn make_state(db: sqlx::Pool<sqlx::Sqlite>, token: String) -> web::Data<AppState> {
+    let (coords_update_sender, _unused_receiver) = tokio::sync::broadcast::channel(16);
+    web::Data::new(AppState {
+        db,
+        auth_token: token,
+        notifier: coords_update_sender,
+    })
+}
+
 #[actix_web::test]
 async fn health_returns_ok_json() {
     let (pool, token) = build_pool_and_token().await;
-    let auth = HttpAuthentication::bearer(validator);
-
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState {
-                db: pool.clone(),
-                auth_token: token,
-            }))
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
-            ),
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
     )
     .await;
 
@@ -77,24 +50,11 @@ async fn health_returns_ok_json() {
 #[actix_web::test]
 async fn post_coords_requires_auth() {
     let (pool, token) = build_pool_and_token().await;
-    let auth = HttpAuthentication::bearer(validator);
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState {
-                db: pool.clone(),
-                auth_token: token,
-            }))
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
-            ),
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
     )
     .await;
 
@@ -144,24 +104,11 @@ async fn post_coords_requires_auth() {
 #[actix_web::test]
 async fn get_user_happy_path_and_not_found_and_case_insensitive() {
     let (pool, token) = build_pool_and_token().await;
-    let auth = HttpAuthentication::bearer(validator);
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState {
-                db: pool.clone(),
-                auth_token: token,
-            }))
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
-            ),
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
     )
     .await;
 
@@ -198,24 +145,11 @@ async fn get_user_happy_path_and_not_found_and_case_insensitive() {
 #[actix_web::test]
 async fn options_does_not_500() {
     let (pool, token) = build_pool_and_token().await;
-    let auth = HttpAuthentication::bearer(validator);
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState {
-                db: pool.clone(),
-                auth_token: token,
-            }))
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
-            ),
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
     )
     .await;
 
@@ -236,23 +170,10 @@ async fn smoke_boot_server_and_health() {
     let addr = listener.local_addr().unwrap();
 
     // Build server
-    let auth = HttpAuthentication::bearer(validator);
     let server = HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(AppState {
-                db: pool.clone(),
-                auth_token: token.clone(),
-            }))
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(web::resource("/coords/{name}").route(web::get().to(get_user))),
-            )
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api)
     })
     .listen(listener)
     .expect("listen")
@@ -273,28 +194,11 @@ async fn smoke_boot_server_and_health() {
 #[actix_web::test]
 async fn delete_requires_auth() {
     let (pool, token) = build_pool_and_token().await;
-    let auth = HttpAuthentication::bearer(validator);
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState {
-                db: pool.clone(),
-                auth_token: token,
-            }))
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(
-                        web::resource("/coords/{name}")
-                            .route(web::get().to(get_user))
-                            .route(web::delete().to(delete_user).wrap(auth.clone())),
-                    ),
-            ),
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
     )
     .await;
 
@@ -317,28 +221,11 @@ async fn delete_requires_auth() {
 #[actix_web::test]
 async fn delete_flow_create_then_delete_then_404() {
     let (pool, token) = build_pool_and_token().await;
-    let auth = HttpAuthentication::bearer(validator);
 
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState {
-                db: pool.clone(),
-                auth_token: token,
-            }))
-            .service(web::resource("/health").route(web::get().to(health)))
-            .service(
-                web::scope("/api")
-                    .service(
-                        web::resource("/coords")
-                            .route(web::post().to(update_location).wrap(auth.clone()))
-                            .route(web::get().to(get_locations)),
-                    )
-                    .service(
-                        web::resource("/coords/{name}")
-                            .route(web::get().to(get_user))
-                            .route(web::delete().to(delete_user).wrap(auth.clone())),
-                    ),
-            ),
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
     )
     .await;
 

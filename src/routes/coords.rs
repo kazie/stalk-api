@@ -48,6 +48,8 @@ pub async fn update_location(state: Data<AppState>, body: Json<NewUserCoords>) -
 
     match result {
         Ok(coords) => {
+            // Publish update to websocket subscribers; ignore if there are no receivers
+            let _ = state.notifier.send(coords.clone());
             if existed {
                 HttpResponse::Ok().json(coords)
             } else {

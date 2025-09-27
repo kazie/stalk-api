@@ -3,8 +3,8 @@ use clap::Parser;
 use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::AppState;
-use stalk_api::db::{check_and_create_db_file, migrate};
 use stalk_api::configure_api;
+use stalk_api::db::{check_and_create_db_file, migrate};
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -70,11 +70,17 @@ async fn main() -> std::io::Result<()> {
     };
     // Start HTTP server and set up graceful shutdown
     let pool_clone = pool.clone();
+    // Create a broadcast channel for websocket notifications
+    let (coords_update_sender, _unused_coords_update_receiver) =
+        tokio::sync::broadcast::channel::<stalk_api::models::UserCoords>(1024);
+
     let server = HttpServer::new(move || {
+        let coords_update_sender = coords_update_sender.clone();
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool_clone.clone(),
                 auth_token: token.clone(),
+                notifier: coords_update_sender,
             }))
             .configure(configure_api)
     })

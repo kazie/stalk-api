@@ -3,7 +3,7 @@ use unicode_normalization::UnicodeNormalization;
 use utoipa::ToSchema;
 
 // Define our item structure for storage/response
-#[derive(Serialize, Deserialize, Debug, ToSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 pub struct UserCoords {
     #[schema(example = "hannes")]
     pub name: String,
@@ -16,7 +16,29 @@ pub struct UserCoords {
 }
 
 // Input DTO without timestamp; reject unknown fields (e.g., client-sent timestamp)
-#[derive(Deserialize, Debug, ToSchema)]
+///
+/// The struct denies unknown fields so clients cannot sneak in a `timestamp` or
+/// any other unexpected property.
+///
+/// Examples
+///
+/// Successful deserialization from JSON:
+/// ```
+/// use stalk_api::models::NewUserCoords;
+/// let json = r#"{"name":"marin","latitude":59.3325,"longitude":18.0649}"#;
+/// let dto: NewUserCoords = serde_json::from_str(json).unwrap();
+/// assert_eq!(dto.name, "marin");
+/// ```
+///
+/// Unknown fields are rejected:
+/// ```
+/// use stalk_api::models::NewUserCoords;
+/// let json_with_unknown = r#"{"name":"m","latitude":1.0,"longitude":2.0,"timestamp":"2020-01-01T00:00:00Z"}"#;
+/// let err = serde_json::from_str::<NewUserCoords>(json_with_unknown).unwrap_err();
+/// let msg = err.to_string();
+/// assert!(msg.contains("unknown field") && msg.contains("timestamp"));
+/// ```
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NewUserCoords {
     #[schema(example = "marin")]
