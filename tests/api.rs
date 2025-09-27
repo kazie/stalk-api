@@ -40,7 +40,7 @@ async fn health_returns_ok_json() {
     )
     .await;
 
-    let req = test::TestRequest::get().uri("/health").to_request();
+    let req = test::TestRequest::get().uri("/api/health").to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -184,7 +184,7 @@ async fn smoke_boot_server_and_health() {
 
     // Call health endpoint using real HTTP client
     let client = Client::default();
-    let url = format!("http://{addr}/health");
+    let url = format!("http://{addr}/api/health");
     let mut resp = client.get(url).send().await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();

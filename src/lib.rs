@@ -40,36 +40,34 @@ pub async fn validator(
 // Configure the Actix Web services exactly like main.rs so tests exercise the real paths
 pub fn configure_api(cfg: &mut web::ServiceConfig) {
     let auth = HttpAuthentication::bearer(validator);
-    cfg.service(
-        actix_web::web::resource("/health").route(actix_web::web::get().to(crate::routes::health)),
-    )
-    .service(crate::routes::ws_coords)
-    .service(crate::routes::ws_coords_user)
-    .service(
-        web::scope("/api")
-            .service(
-                web::resource("/coords")
-                    .route(
-                        web::post()
-                            .to(crate::routes::update_location)
-                            .wrap(auth.clone()),
-                    )
-                    .route(web::get().to(crate::routes::get_locations)),
-            )
-            .service(
-                web::resource("/coords/{name}")
-                    .route(web::get().to(crate::routes::get_user))
-                    .route(web::delete().to(crate::routes::delete_user).wrap(auth)),
-            )
-            .service(
-                web::resource("/openapi.json").route(web::get().to(|| async {
-                    actix_web::HttpResponse::Ok().json(crate::openapi::ApiDoc::openapi())
-                })),
-            )
-            .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}")
-                    .url("/api/openapi.json", crate::openapi::ApiDoc::openapi()),
-            )
-            .service(RapiDoc::new("/api/openapi.json").path("/rapidoc")),
-    );
+    cfg.service(crate::routes::ws_coords)
+        .service(crate::routes::ws_coords_user)
+        .service(
+            web::scope("/api")
+                .service(web::resource("/health").route(web::get().to(crate::routes::health)))
+                .service(
+                    web::resource("/coords")
+                        .route(
+                            web::post()
+                                .to(crate::routes::update_location)
+                                .wrap(auth.clone()),
+                        )
+                        .route(web::get().to(crate::routes::get_locations)),
+                )
+                .service(
+                    web::resource("/coords/{name}")
+                        .route(web::get().to(crate::routes::get_user))
+                        .route(web::delete().to(crate::routes::delete_user).wrap(auth)),
+                )
+                .service(
+                    web::resource("/openapi.json").route(web::get().to(|| async {
+                        actix_web::HttpResponse::Ok().json(crate::openapi::ApiDoc::openapi())
+                    })),
+                )
+                .service(
+                    SwaggerUi::new("/swagger-ui/{_:.*}")
+                        .url("/api/openapi.json", crate::openapi::ApiDoc::openapi()),
+                )
+                .service(RapiDoc::new("/api/openapi.json").path("/rapidoc")),
+        );
 }

@@ -16,7 +16,7 @@ pub struct HealthResponse {
 /// Health check endpoint
 #[utoipa::path(
     get,
-    path = "/health",
+    path = "/api/health",
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse)
     ),
