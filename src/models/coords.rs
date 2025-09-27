@@ -1,21 +1,29 @@
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
+use utoipa::ToSchema;
 
 // Define our item structure for storage/response
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct UserCoords {
+    #[schema(example = "hannes")]
     pub name: String,
+    #[schema(example = 59.334)]
     pub latitude: f64,
+    #[schema(example = 18.063)]
     pub longitude: f64,
+    #[schema(format = DateTime, example = "2025-09-27T14:20:00.000Z")]
     pub timestamp: Option<String>,
 }
 
 // Input DTO without timestamp; reject unknown fields (e.g., client-sent timestamp)
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NewUserCoords {
+    #[schema(example = "marin")]
     pub name: String,
+    #[schema(example = 59.3325)]
     pub latitude: f64,
+    #[schema(example = 18.0649)]
     pub longitude: f64,
 }
 
