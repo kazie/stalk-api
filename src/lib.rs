@@ -15,7 +15,7 @@ use utoipa_swagger_ui::SwaggerUi;
 pub struct AppState {
     pub db: Pool<Sqlite>,
     pub auth_token: String,
-    pub notifier: tokio::sync::broadcast::Sender<crate::models::UserCoords>,
+    pub notifier: tokio::sync::broadcast::Sender<crate::models::WsEvent>,
 }
 
 // Reuse the same bearer validator from main in both prod and tests

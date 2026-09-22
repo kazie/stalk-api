@@ -3,6 +3,7 @@ use crate::db::{
     delete_user_by_name, get_all_coords_time_limited, get_specific_user_coords, upsert_coords,
 };
 use crate::models::UserCoords;
+use crate::models::WsEvent;
 use crate::models::normalize_name;
 use crate::models::{NewUserCoords, validate_and_normalize};
 use actix_web::http::header::LOCATION;
@@ -49,7 +50,7 @@ pub async fn update_location(state: Data<AppState>, body: Json<NewUserCoords>) -
     match result {
         Ok(coords) => {
             // Publish update to websocket subscribers; ignore if there are no receivers
-            let _ = state.notifier.send(coords.clone());
+            let _ = state.notifier.send(WsEvent::Update(coords.clone()));
             if existed {
                 HttpResponse::Ok().json(coords)
             } else {
@@ -133,7 +134,11 @@ pub async fn delete_user(state: Data<AppState>, name: Path<String>) -> impl Resp
     debug!("Deleting user: {username}");
 
     match delete_user_by_name(&state.db, &username).await {
-        Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(true) => {
+            // Notify websocket subscribers that this user's pin was deleted; ignore if there are no receivers
+            let _ = state.notifier.send(WsEvent::Delete { name: username });
+            HttpResponse::NoContent().finish()
+        }
         Ok(false) => HttpResponse::NotFound().json("Item not found"),
         Err(e) => {
             error!("Database error during delete: {e:?}");
