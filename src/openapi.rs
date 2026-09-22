@@ -1,4 +1,4 @@
-use crate::models::{NewUserCoords, UserCoords};
+use crate::models::{NewUserCoords, UserCoords, WsEvent};
 use crate::routes::HealthResponse;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -27,7 +27,7 @@ impl Modify for SecurityAddon {
         crate::routes::ws_coords_user,
     ),
     components(
-        schemas(UserCoords, NewUserCoords, HealthResponse)
+        schemas(UserCoords, NewUserCoords, HealthResponse, WsEvent)
     ),
     modifiers(&SecurityAddon),
     tags(

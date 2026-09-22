@@ -15,6 +15,15 @@ pub struct UserCoords {
     pub timestamp: Option<String>,
 }
 
+/// A message broadcast to websocket clients: either a location update or a
+/// notification that a user's location was deleted.
+#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum WsEvent {
+    Update(UserCoords),
+    Delete { name: String },
+}
+
 // Input DTO without timestamp; reject unknown fields (e.g., client-sent timestamp)
 ///
 /// The struct denies unknown fields so clients cannot sneak in a `timestamp` or

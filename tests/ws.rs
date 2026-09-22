@@ -68,6 +68,7 @@ async fn ws_all_users_stream_receives_updates() {
             Some(Ok(awc::ws::Frame::Text(bytes))) => {
                 let text = String::from_utf8(bytes.to_vec()).unwrap();
                 let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["type"], "update");
                 assert_eq!(json["name"], "Alice");
                 assert_eq!(json["latitude"], 10.0);
                 assert_eq!(json["longitude"], 20.0);
@@ -148,6 +149,7 @@ async fn ws_per_user_isolation_and_case_insensitive() {
         }
     }
     assert_eq!(received.len(), 2);
+    assert!(received.iter().all(|j| j["type"] == "update"));
     assert!(received.iter().all(|j| j["name"] == "Alice"));
 }
 
@@ -200,6 +202,7 @@ async fn ws_per_user_snapshot_on_connect() {
             Some(Ok(awc::ws::Frame::Text(bytes))) => {
                 let text = String::from_utf8(bytes.to_vec()).unwrap();
                 let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["type"], "update");
                 assert_eq!(json["name"], "Snap");
                 assert_eq!(json["latitude"], 42.0);
                 assert_eq!(json["longitude"], 24.0);
@@ -267,6 +270,7 @@ async fn ws_all_users_initial_snapshot_like_updates() {
             Some(Ok(awc::ws::Frame::Text(bytes))) => {
                 let text = String::from_utf8(bytes.to_vec()).unwrap();
                 let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["type"], "update");
                 names.push(json["name"].as_str().unwrap().to_string());
             }
             Some(Ok(awc::ws::Frame::Ping(_)))
@@ -303,6 +307,7 @@ async fn ws_all_users_initial_snapshot_like_updates() {
             Some(Ok(awc::ws::Frame::Text(bytes))) => {
                 let text = String::from_utf8(bytes.to_vec()).unwrap();
                 let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["type"], "update");
                 assert_eq!(json["name"], "Alice");
                 assert_eq!(json["latitude"], 9.9);
                 assert_eq!(json["longitude"], 9.9);
@@ -315,6 +320,182 @@ async fn ws_all_users_initial_snapshot_like_updates() {
             Some(Ok(awc::ws::Frame::Close(_))) => panic!("websocket closed before update frame"),
             Some(Err(e)) => panic!("ws error: {:?}", e),
             None => panic!("stream ended before update frame"),
+        }
+    }
+}
+
+#[actix_web::test]
+async fn ws_broadcasts_delete_event_on_user_deletion() {
+    let pool = setup_pool().await;
+    let token = "test-token".to_string();
+    let (coords_update_sender, _unused_receiver) = tokio::sync::broadcast::channel(64);
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().unwrap();
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token.clone(),
+                notifier: coords_update_sender.clone(),
+            }))
+            .configure(configure_api)
+    })
+    .listen(listener)
+    .expect("listen")
+    .run();
+    let _handle = actix_web::rt::spawn(server);
+    let base_url = format!("http://{}", addr);
+
+    let client = awc::Client::new();
+
+    // Create a user via REST
+    let body = NewUserCoords {
+        name: "Doomed".into(),
+        latitude: 1.0,
+        longitude: 2.0,
+    };
+    let resp = client
+        .post(format!("{}/api/coords", base_url))
+        .insert_header(("Authorization", format!("Bearer {}", "test-token")))
+        .send_json(&body)
+        .await
+        .expect("post ok");
+    assert!(resp.status().is_success());
+
+    // Connect to the all-users WS stream (no initial snapshot needed)
+    let url = ws_url(&base_url, "/ws/coords");
+    let (_resp, mut ws) = client.ws(url).connect().await.expect("ws connect");
+
+    // Delete the user via REST
+    let resp = client
+        .delete(format!("{}/api/coords/Doomed", base_url))
+        .insert_header(("Authorization", format!("Bearer {}", "test-token")))
+        .send()
+        .await
+        .expect("delete ok");
+    assert_eq!(resp.status(), 204);
+
+    // Expect a delete event over the websocket; ignore Ping/Pong/etc.
+    loop {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["type"], "delete");
+                assert_eq!(json["name"], "Doomed");
+                break;
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => panic!("websocket closed before delete frame"),
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended before delete frame"),
+        }
+    }
+}
+
+#[actix_web::test]
+async fn ws_per_user_stream_receives_delete_event_for_matching_user() {
+    let pool = setup_pool().await;
+    let token = "test-token".to_string();
+    let (coords_update_sender, _unused_receiver) = tokio::sync::broadcast::channel(64);
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().unwrap();
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_token: token.clone(),
+                notifier: coords_update_sender.clone(),
+            }))
+            .configure(configure_api)
+    })
+    .listen(listener)
+    .expect("listen")
+    .run();
+    let _handle = actix_web::rt::spawn(server);
+    let base_url = format!("http://{}", addr);
+
+    let client = awc::Client::new();
+
+    // Create two users via REST
+    for (name, lat) in [("Target", 1.0_f64), ("Other", 2.0_f64)] {
+        let body = NewUserCoords {
+            name: name.into(),
+            latitude: lat,
+            longitude: 0.0,
+        };
+        let resp = client
+            .post(format!("{}/api/coords", base_url))
+            .insert_header(("Authorization", format!("Bearer {}", "test-token")))
+            .send_json(&body)
+            .await
+            .expect("post ok");
+        assert!(resp.status().is_success());
+    }
+
+    // Connect to the per-user WS stream for Target; this endpoint always sends an
+    // initial snapshot on connect, so consume and discard that frame first.
+    let url = ws_url(&base_url, "/ws/coords/Target");
+    let (_resp, mut ws) = client.ws(url).connect().await.expect("ws connect");
+    loop {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["type"], "update");
+                assert_eq!(json["name"], "Target");
+                break;
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => panic!("websocket closed before snapshot frame"),
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended before snapshot frame"),
+        }
+    }
+
+    // Delete Other first; the Target connection should not forward this
+    let resp = client
+        .delete(format!("{}/api/coords/Other", base_url))
+        .insert_header(("Authorization", format!("Bearer {}", "test-token")))
+        .send()
+        .await
+        .expect("delete ok");
+    assert_eq!(resp.status(), 204);
+
+    // Now delete Target
+    let resp = client
+        .delete(format!("{}/api/coords/Target", base_url))
+        .insert_header(("Authorization", format!("Bearer {}", "test-token")))
+        .send()
+        .await
+        .expect("delete ok");
+    assert_eq!(resp.status(), 204);
+
+    // Expect a delete event for Target over the websocket; ignore Ping/Pong/etc.
+    loop {
+        match ws.next().await {
+            Some(Ok(awc::ws::Frame::Text(bytes))) => {
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                let json: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(json["type"], "delete");
+                assert_eq!(json["name"], "Target");
+                break;
+            }
+            Some(Ok(awc::ws::Frame::Ping(_)))
+            | Some(Ok(awc::ws::Frame::Pong(_)))
+            | Some(Ok(awc::ws::Frame::Continuation(_)))
+            | Some(Ok(awc::ws::Frame::Binary(_))) => continue,
+            Some(Ok(awc::ws::Frame::Close(_))) => panic!("websocket closed before delete frame"),
+            Some(Err(e)) => panic!("ws error: {:?}", e),
+            None => panic!("stream ended before delete frame"),
         }
     }
 }

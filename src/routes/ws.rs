@@ -1,3 +1,4 @@
+use crate::models::WsEvent;
 use crate::models::normalize_name;
 use crate::{
     AppState,
@@ -52,7 +53,7 @@ where
         ("initial" = bool, Query, description = "When true (accepts only true/false or 1/0), send an initial load of all current users as individual update frames before streaming live updates")
     ),
     responses(
-        (status = 101, description = "Switching Protocols: WebSocket upgrade to a stream of JSON UserCoords messages"),
+        (status = 101, description = "Switching Protocols: WebSocket upgrade to a stream of JSON WsEvent messages, tagged by `type` as either `update` (a UserCoords payload) or `delete` (`{ name }`, sent when that user's pin is deleted)", body = WsEvent),
         (status = 400, description = "Bad request")
     ),
     tag = "coords"
@@ -80,7 +81,8 @@ pub async fn ws_coords(
         match get_all_coords_time_limited(&state.db).await {
             Ok(list) => {
                 for coords in list {
-                    match serde_json::to_string(&coords) {
+                    let event = WsEvent::Update(coords);
+                    match serde_json::to_string(&event) {
                         Ok(s) => {
                             if let Err(e) = ws_session.text(s).await {
                                 debug!("WS send error during initial snapshot, closing: {e:?}");
@@ -117,8 +119,8 @@ pub async fn ws_coords(
                 // Receive broadcast of updates
                 update_result = updates_receiver.recv() => {
                     match update_result {
-                        Ok(coords) => {
-                            let json = match serde_json::to_string(&coords) {
+                        Ok(event) => {
+                            let json = match serde_json::to_string(&event) {
                                 Ok(s) => s,
                                 Err(e) => { error!("Serialize error: {e:?}"); break; }
                             };
@@ -166,7 +168,7 @@ pub async fn ws_coords(
         ("name" = String, Path, description = "User name (case-insensitive)")
     ),
     responses(
-        (status = 101, description = "Switching Protocols: WebSocket upgrade to a stream of JSON UserCoords messages filtered by user"),
+        (status = 101, description = "Switching Protocols: WebSocket upgrade to a stream of JSON WsEvent messages filtered by user, tagged by `type` as either `update` (a UserCoords payload) or `delete` (`{ name }`, sent when this user's pin is deleted)", body = WsEvent),
         (status = 400, description = "Bad request")
     ),
     tag = "coords"
@@ -192,7 +194,7 @@ pub async fn ws_coords_user(
 
     // Optionally send a snapshot if available
     if let Ok(Some(snapshot)) = get_specific_user_coords_time_limited(&state.db, &username).await
-        && let Ok(json) = serde_json::to_string(&snapshot)
+        && let Ok(json) = serde_json::to_string(&WsEvent::Update(snapshot))
     {
         let _ = ws_session.text(json).await;
     }
@@ -212,9 +214,14 @@ pub async fn ws_coords_user(
                 }
                 update_result = updates_receiver.recv() => {
                     match update_result {
-                        Ok(coords) => {
-                            if coords.name.eq_ignore_ascii_case(&username) { // names are stored normalized in DB, compare case-insensitively
-                                let json = match serde_json::to_string(&coords) { Ok(s) => s, Err(e) => { error!("Serialize error: {e:?}"); break; } };
+                        Ok(event) => {
+                            // names are stored normalized in DB, compare case-insensitively
+                            let matches = match &event {
+                                WsEvent::Update(coords) => coords.name.eq_ignore_ascii_case(&username),
+                                WsEvent::Delete { name } => name.eq_ignore_ascii_case(&username),
+                            };
+                            if matches {
+                                let json = match serde_json::to_string(&event) { Ok(s) => s, Err(e) => { error!("Serialize error: {e:?}"); break; } };
                                 if let Err(e) = ws_session.text(json).await { debug!("WS send error, closing: {e:?}"); break; }
                             }
                         }
