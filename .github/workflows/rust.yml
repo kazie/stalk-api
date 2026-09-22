@@ -19,10 +19,9 @@ jobs:
     - uses: actions/checkout@v7
 
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: stable
-        override: true
         components: rustfmt, clippy, llvm-tools-preview
 
     - name: Check Rust version
@@ -64,7 +63,7 @@ jobs:
       run: cargo test
 
     - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@v2.87.15
+      uses: taiki-e/install-action@v2.87.18
       with:
         tool: cargo-llvm-cov
 
