@@ -6,6 +6,11 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     groups:
+      # utoipa-swagger-ui/utoipa-rapidoc share utoipa's OpenApi type, so they must move in lockstep.
+      utoipa:
+        applies-to: version-updates
+        patterns:
+          - "utoipa*"
       non-major:
         applies-to: version-updates
         update-types:

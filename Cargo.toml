@@ -13,8 +13,8 @@ log = "0.4"
 env_logger = "0.11.10"
 clap = { version = "4.6", features = ["derive"] }
 unicode-normalization = "0.1"
-utoipa = { version = "5", features = ["actix_extras"] }
-utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
+utoipa = { version = "6", features = ["actix_extras"] }
+utoipa-swagger-ui = { version = "10", features = ["actix-web"] }
 utoipa-rapidoc = { version = "7", features = ["actix-web"] }
 tokio = { version = "1", features = ["sync", "macros"] }
 futures-util = "0.3"
