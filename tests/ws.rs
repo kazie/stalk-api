@@ -53,6 +53,8 @@ async fn ws_all_users_stream_receives_updates() {
         name: "Alice".into(),
         latitude: 10.0,
         longitude: 20.0,
+        speed: Some(8.3),
+        heading: Some(45.0),
     };
     let resp = client
         .post(format!("{}/api/coords", base_url))
@@ -72,6 +74,8 @@ async fn ws_all_users_stream_receives_updates() {
                 assert_eq!(json["name"], "Alice");
                 assert_eq!(json["latitude"], 10.0);
                 assert_eq!(json["longitude"], 20.0);
+                assert_eq!(json["speed"], 8.3);
+                assert_eq!(json["heading"], 45.0);
                 break;
             }
             Some(Ok(awc::ws::Frame::Ping(_)))
@@ -118,6 +122,8 @@ async fn ws_per_user_isolation_and_case_insensitive() {
             name: name.into(),
             latitude: lat,
             longitude: 0.0,
+            speed: None,
+            heading: None,
         };
         let resp = client
             .post(format!("{}/api/coords", base_url))
@@ -183,6 +189,8 @@ async fn ws_per_user_snapshot_on_connect() {
         name: "Snap".into(),
         latitude: 42.0,
         longitude: 24.0,
+        speed: None,
+        heading: None,
     };
     let resp = client
         .post(format!("{}/api/coords", base_url))
@@ -250,6 +258,8 @@ async fn ws_all_users_initial_snapshot_like_updates() {
             name: name.into(),
             latitude: lat,
             longitude: 0.0,
+            speed: None,
+            heading: None,
         };
         let resp = client
             .post(format!("{}/api/coords", base_url))
@@ -292,6 +302,8 @@ async fn ws_all_users_initial_snapshot_like_updates() {
         name: "Alice".into(),
         latitude: 9.9,
         longitude: 9.9,
+        speed: None,
+        heading: None,
     };
     let resp = client
         .post(format!("{}/api/coords", base_url))
@@ -354,6 +366,8 @@ async fn ws_broadcasts_delete_event_on_user_deletion() {
         name: "Doomed".into(),
         latitude: 1.0,
         longitude: 2.0,
+        speed: None,
+        heading: None,
     };
     let resp = client
         .post(format!("{}/api/coords", base_url))
@@ -428,6 +442,8 @@ async fn ws_per_user_stream_receives_delete_event_for_matching_user() {
             name: name.into(),
             latitude: lat,
             longitude: 0.0,
+            speed: None,
+            heading: None,
         };
         let resp = client
             .post(format!("{}/api/coords", base_url))

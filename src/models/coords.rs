@@ -11,6 +11,15 @@ pub struct UserCoords {
     pub latitude: f64,
     #[schema(example = 18.063)]
     pub longitude: f64,
+    /// Speed over ground in metres per second. Omitted when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 8.3, minimum = 0)]
+    pub speed: Option<f64>,
+    /// Direction of travel in degrees clockwise from true north, in `[0, 360)`.
+    /// Omitted when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 45.0, minimum = 0, exclusive_maximum = 360)]
+    pub heading: Option<f64>,
     #[schema(format = DateTime, example = "2025-09-27T14:20:00.000Z")]
     pub timestamp: Option<String>,
 }
@@ -56,6 +65,15 @@ pub struct NewUserCoords {
     pub latitude: f64,
     #[schema(example = 18.0649)]
     pub longitude: f64,
+    /// Speed over ground in metres per second. Omitted when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 8.3, minimum = 0)]
+    pub speed: Option<f64>,
+    /// Direction of travel in degrees clockwise from true north, in `[0, 360]`; 360 is normalized to 0.
+    /// Omitted when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = 45.0, minimum = 0, maximum = 360)]
+    pub heading: Option<f64>,
 }
 
 /// Normalize a user-provided name by trimming surrounding whitespace and
@@ -86,6 +104,8 @@ pub fn normalize_name(name: &str) -> String {
 /// - latitude must be finite and within [-90, 90]
 /// - longitude must be finite and within [-180, 180]
 /// - name must be non-empty after trimming and NFC normalization
+/// - speed, if present, must be finite and non-negative
+/// - heading, if present, must be finite and within [0, 360]; 360 is normalized to 0
 /// - timestamp is controlled by the server
 ///
 /// Examples
@@ -93,10 +113,28 @@ pub fn normalize_name(name: &str) -> String {
 /// ```
 /// use stalk_api::models::{validate_and_normalize, NewUserCoords};
 ///
-/// let input = NewUserCoords { name: " Alice ".into(), latitude: 10.0, longitude: 20.0 };
+/// let input = NewUserCoords {
+///     name: " Alice ".into(),
+///     latitude: 10.0,
+///     longitude: 20.0,
+///     speed: None,
+///     heading: None,
+/// };
 /// let out = validate_and_normalize(input).expect("valid input");
 /// assert_eq!(out.name, "Alice");
 /// assert!(out.timestamp.is_none());
+/// ```
+///
+/// Speed and heading are optional and passed through, with heading normalized:
+///
+/// ```
+/// use stalk_api::models::{validate_and_normalize, NewUserCoords};
+///
+/// let json = r#"{"name":"marin","latitude":59.3,"longitude":18.0,"speed":8.3,"heading":360}"#;
+/// let input: NewUserCoords = serde_json::from_str(json).unwrap();
+/// let out = validate_and_normalize(input).expect("valid input");
+/// assert_eq!(out.speed, Some(8.3));
+/// assert_eq!(out.heading, Some(0.0));
 /// ```
 pub fn validate_and_normalize(input: NewUserCoords) -> Result<UserCoords, String> {
     // Validate latitude and longitude ranges and finiteness
@@ -110,6 +148,22 @@ pub fn validate_and_normalize(input: NewUserCoords) -> Result<UserCoords, String
         return Err("longitude must be between -180 and 180".to_string());
     }
 
+    // Validate optional motion data
+    if let Some(speed) = input.speed
+        && (!speed.is_finite() || speed < 0.0)
+    {
+        return Err("speed must be a finite, non-negative number of m/s".to_string());
+    }
+    if let Some(heading) = input.heading
+        && !(0.0..=360.0).contains(&heading)
+    {
+        return Err("heading must be between 0 and 360 degrees".to_string());
+    }
+    // 360 is north again; `== 0.0` also folds -0.0 into 0.0, keeping output within [0, 360)
+    let heading = input
+        .heading
+        .map(|h| if h == 0.0 || h == 360.0 { 0.0 } else { h });
+
     // Normalize and validate name
     let name = normalize_name(&input.name);
     if name.is_empty() {
@@ -120,6 +174,8 @@ pub fn validate_and_normalize(input: NewUserCoords) -> Result<UserCoords, String
         name,
         latitude: input.latitude,
         longitude: input.longitude,
+        speed: input.speed,
+        heading,
         timestamp: None, // server controls timestamp
     })
 }
@@ -141,6 +197,8 @@ mod tests {
             name: "Alice".into(),
             latitude: 10.0,
             longitude: -20.0,
+            speed: None,
+            heading: None,
         };
         let out = validate_and_normalize(input).unwrap();
         assert_eq!(out.name, "Alice");
@@ -155,12 +213,16 @@ mod tests {
             name: "Bob".into(),
             latitude: f64::NAN,
             longitude: 0.0,
+            speed: None,
+            heading: None,
         };
         assert!(validate_and_normalize(input).is_err());
         let input = NewUserCoords {
             name: "Bob".into(),
             latitude: 0.0,
             longitude: f64::INFINITY,
+            speed: None,
+            heading: None,
         };
         assert!(validate_and_normalize(input).is_err());
     }
@@ -171,7 +233,9 @@ mod tests {
             validate_and_normalize(NewUserCoords {
                 name: "A".into(),
                 latitude: 91.0,
-                longitude: 0.0
+                longitude: 0.0,
+                speed: None,
+                heading: None
             })
             .is_err()
         );
@@ -179,7 +243,9 @@ mod tests {
             validate_and_normalize(NewUserCoords {
                 name: "A".into(),
                 latitude: -91.0,
-                longitude: 0.0
+                longitude: 0.0,
+                speed: None,
+                heading: None
             })
             .is_err()
         );
@@ -187,7 +253,9 @@ mod tests {
             validate_and_normalize(NewUserCoords {
                 name: "A".into(),
                 latitude: 0.0,
-                longitude: 181.0
+                longitude: 181.0,
+                speed: None,
+                heading: None
             })
             .is_err()
         );
@@ -195,7 +263,9 @@ mod tests {
             validate_and_normalize(NewUserCoords {
                 name: "A".into(),
                 latitude: 0.0,
-                longitude: -181.0
+                longitude: -181.0,
+                speed: None,
+                heading: None
             })
             .is_err()
         );
@@ -207,9 +277,121 @@ mod tests {
             validate_and_normalize(NewUserCoords {
                 name: "   ".into(),
                 latitude: 0.0,
-                longitude: 0.0
+                longitude: 0.0,
+                speed: None,
+                heading: None
             })
             .is_err()
         );
+    }
+
+    fn with_motion(speed: Option<f64>, heading: Option<f64>) -> NewUserCoords {
+        NewUserCoords {
+            name: "Mover".into(),
+            latitude: 59.0,
+            longitude: 18.0,
+            speed,
+            heading,
+        }
+    }
+
+    #[test]
+    fn validate_passes_motion_through() {
+        let out = validate_and_normalize(with_motion(Some(8.3), Some(45.0))).unwrap();
+        assert_eq!(out.speed, Some(8.3));
+        assert_eq!(out.heading, Some(45.0));
+
+        let out = validate_and_normalize(with_motion(None, None)).unwrap();
+        assert_eq!(out.speed, None);
+        assert_eq!(out.heading, None);
+
+        // Bounds are inclusive; zero speed means "standing still", not "unknown"
+        let out = validate_and_normalize(with_motion(Some(0.0), Some(0.0))).unwrap();
+        assert_eq!(out.speed, Some(0.0));
+        assert_eq!(out.heading, Some(0.0));
+    }
+
+    #[test]
+    fn validate_normalizes_full_turn_heading() {
+        let out = validate_and_normalize(with_motion(None, Some(360.0))).unwrap();
+        assert_eq!(out.heading, Some(0.0));
+    }
+
+    #[test]
+    fn validate_normalizes_negative_zero_heading() {
+        let out = validate_and_normalize(with_motion(None, Some(-0.0))).unwrap();
+        assert!(out.heading.unwrap().is_sign_positive());
+        assert_eq!(serde_json::to_value(&out).unwrap()["heading"], 0.0);
+    }
+
+    #[test]
+    fn validate_rejects_invalid_speed() {
+        for speed in [-0.1, f64::NAN, f64::INFINITY] {
+            assert!(
+                validate_and_normalize(with_motion(Some(speed), None)).is_err(),
+                "speed {speed} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_invalid_heading() {
+        for heading in [-0.1, 360.1, f64::NAN, f64::NEG_INFINITY] {
+            assert!(
+                validate_and_normalize(with_motion(None, Some(heading))).is_err(),
+                "heading {heading} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn motion_fields_are_optional_and_nullable_in_json() {
+        let absent: NewUserCoords =
+            serde_json::from_str(r#"{"name":"a","latitude":1.0,"longitude":2.0}"#).unwrap();
+        assert_eq!((absent.speed, absent.heading), (None, None));
+
+        let null: NewUserCoords = serde_json::from_str(
+            r#"{"name":"a","latitude":1.0,"longitude":2.0,"speed":null,"heading":null}"#,
+        )
+        .unwrap();
+        assert_eq!((null.speed, null.heading), (None, None));
+
+        let present: NewUserCoords = serde_json::from_str(
+            r#"{"name":"a","latitude":1.0,"longitude":2.0,"speed":3.5,"heading":270}"#,
+        )
+        .unwrap();
+        assert_eq!((present.speed, present.heading), (Some(3.5), Some(270.0)));
+
+        // Still strict about anything else
+        assert!(
+            serde_json::from_str::<NewUserCoords>(
+                r#"{"name":"a","latitude":1.0,"longitude":2.0,"velocity":3.5}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn unknown_motion_is_omitted_when_serialized() {
+        let coords = UserCoords {
+            name: "a".into(),
+            latitude: 1.0,
+            longitude: 2.0,
+            speed: None,
+            heading: None,
+            timestamp: None,
+        };
+        let json = serde_json::to_value(&coords).unwrap();
+        assert!(json.get("speed").is_none());
+        assert!(json.get("heading").is_none());
+
+        let coords = UserCoords {
+            speed: Some(8.3),
+            heading: Some(45.0),
+            ..coords
+        };
+        let json = serde_json::to_value(&coords).unwrap();
+        assert_eq!(json["speed"], 8.3);
+        assert_eq!(json["heading"], 45.0);
     }
 }

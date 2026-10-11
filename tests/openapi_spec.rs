@@ -53,6 +53,28 @@ async fn openapi_json_and_uis_are_served_under_api_scope() {
         "timestamp should have format=date-time in OpenAPI schema"
     );
 
+    // Verify the optional motion fields are documented on both input and output
+    for schema in ["UserCoords", "NewUserCoords"] {
+        let props = &json["components"]["schemas"][schema]["properties"];
+        for field in ["speed", "heading"] {
+            assert!(
+                props[field].is_object(),
+                "{schema}.{field} should be documented in OpenAPI schema"
+            );
+        }
+        let required = json["components"]["schemas"][schema]["required"]
+            .as_array()
+            .expect("required list");
+        assert!(
+            !required.iter().any(|r| r == "speed" || r == "heading"),
+            "{schema} speed/heading should be optional"
+        );
+    }
+
+    // Stored headings are normalized, so responses never contain 360
+    let heading = &json["components"]["schemas"]["UserCoords"]["properties"]["heading"];
+    assert_eq!(heading["exclusiveMaximum"], 360.0);
+
     // Verify HealthResponse has example for status
     let health_status_example =
         json["components"]["schemas"]["HealthResponse"]["properties"]["status"]["example"].as_str();

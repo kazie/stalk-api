@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_coords\n        LIMIT 20; -- If more users, create streaming or something, lol\n        ",
+  "query": "\n        SELECT\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            speed as \"speed?: f64\",\n            heading as \"heading?: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_coords\n        WHERE name = ?  -- uniq index, so limited to 1 answer\n        ",
   "describe": {
     "columns": [
       {
@@ -37,8 +37,30 @@
         }
       },
       {
-        "name": "timestamp!: String",
+        "name": "speed?: f64",
         "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "speed"
+          }
+        }
+      },
+      {
+        "name": "heading?: f64",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "heading"
+          }
+        }
+      },
+      {
+        "name": "timestamp!: String",
+        "ordinal": 5,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -49,14 +71,16 @@
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       true,
       false,
       false,
+      true,
+      true,
       false
     ]
   },
-  "hash": "2c7ef6f9e07bdfc2b67bc33d599d30cd1167efa988c8c9235b460e8911672c26"
+  "hash": "b3a46fc05417bcfd4b40e6aa268f7c02f5548e2cf8ad61f4b74e1d05116ea4ce"
 }

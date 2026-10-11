@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO user_coords (name, latitude, longitude, speed, heading)\n        VALUES (?, ?, ?, ?, ?)\n        ON CONFLICT(name) DO UPDATE SET\n            latitude = excluded.latitude,\n            longitude = excluded.longitude,\n            speed = excluded.speed, -- always replaced, never keep a stale speed/heading\n            heading = excluded.heading,\n            timestamp = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\n        RETURNING\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            speed as \"speed?: f64\",\n            heading as \"heading?: f64\",\n            timestamp as \"timestamp!: String\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "latitude!: f64",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "latitude"
+          }
+        }
+      },
+      {
+        "name": "longitude!: f64",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "longitude"
+          }
+        }
+      },
+      {
+        "name": "speed?: f64",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "speed"
+          }
+        }
+      },
+      {
+        "name": "heading?: f64",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "heading"
+          }
+        }
+      },
+      {
+        "name": "timestamp!: String",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "timestamp"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "80f91963f2563342d8f3b2b515696848b0bc90f126a8eeb6a2e2b4390bf92f38"
+}
