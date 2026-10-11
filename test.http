@@ -14,3 +14,17 @@ Authorization: Bearer your-api-token-here
   "latitude": 59.32721756211293,
   "longitude": 18.107101093216905
 }
+###
+# Speed (m/s) and heading (degrees clockwise from true north) are optional
+POST http://localhost:8080/api/coords
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer your-api-token-here
+
+{
+  "name": "kazie",
+  "latitude": 59.32721756211293,
+  "longitude": 18.107101093216905,
+  "speed": 8.3,
+  "heading": 45.0
+}

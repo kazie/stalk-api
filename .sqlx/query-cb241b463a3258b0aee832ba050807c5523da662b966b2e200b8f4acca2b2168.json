@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            name as \"name!: String\",\n            latitude as \"latitude!: f64\",\n            longitude as \"longitude!: f64\",\n            speed as \"speed?: f64\",\n            heading as \"heading?: f64\",\n            timestamp as \"timestamp!: String\"\n        FROM user_coords\n        WHERE timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))\n        LIMIT 20; -- If more users, create streaming or something, lol\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!: String",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "latitude!: f64",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "latitude"
+          }
+        }
+      },
+      {
+        "name": "longitude!: f64",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "longitude"
+          }
+        }
+      },
+      {
+        "name": "speed?: f64",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "speed"
+          }
+        }
+      },
+      {
+        "name": "heading?: f64",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "heading"
+          }
+        }
+      },
+      {
+        "name": "timestamp!: String",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_coords",
+            "name": "timestamp"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "cb241b463a3258b0aee832ba050807c5523da662b966b2e200b8f4acca2b2168"
+}

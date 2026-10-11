@@ -8,21 +8,27 @@ pub async fn upsert_coords(
     sqlx::query_as!(
         UserCoords,
         r#"
-        INSERT INTO user_coords (name, latitude, longitude)
-        VALUES (?, ?, ?)
+        INSERT INTO user_coords (name, latitude, longitude, speed, heading)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             latitude = excluded.latitude,
             longitude = excluded.longitude,
+            speed = excluded.speed, -- always replaced, never keep a stale speed/heading
+            heading = excluded.heading,
             timestamp = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         RETURNING
             name as "name!: String",
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
+            speed as "speed?: f64",
+            heading as "heading?: f64",
             timestamp as "timestamp!: String"
         "#,
         user_coords.name,
         user_coords.latitude,
-        user_coords.longitude
+        user_coords.longitude,
+        user_coords.speed,
+        user_coords.heading
     )
     .fetch_one(db)
     .await
@@ -36,6 +42,8 @@ pub async fn get_all_coords(db: &Pool<Sqlite>) -> Result<Vec<UserCoords>, Error>
             name as "name!: String",
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
+            speed as "speed?: f64",
+            heading as "heading?: f64",
             timestamp as "timestamp!: String"
         FROM user_coords
         LIMIT 20; -- If more users, create streaming or something, lol
@@ -53,6 +61,8 @@ pub async fn get_all_coords_time_limited(db: &Pool<Sqlite>) -> Result<Vec<UserCo
             name as "name!: String",
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
+            speed as "speed?: f64",
+            heading as "heading?: f64",
             timestamp as "timestamp!: String"
         FROM user_coords
         WHERE timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', datetime('now', '-60 minutes'))
@@ -74,6 +84,8 @@ pub async fn get_specific_user_coords(
             name as "name!: String",
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
+            speed as "speed?: f64",
+            heading as "heading?: f64",
             timestamp as "timestamp!: String"
         FROM user_coords
         WHERE name = ?  -- uniq index, so limited to 1 answer
@@ -95,6 +107,8 @@ pub async fn get_specific_user_coords_time_limited(
             name as "name!: String",
             latitude as "latitude!: f64",
             longitude as "longitude!: f64",
+            speed as "speed?: f64",
+            heading as "heading?: f64",
             timestamp as "timestamp!: String"
         FROM user_coords
         WHERE name = ?  -- uniq index, so limited to 1 answer
@@ -166,6 +180,8 @@ mod tests {
             name: "testuser".to_string(),
             latitude: 59.32721,
             longitude: 18.10710,
+            speed: None,
+            heading: None,
             timestamp: None, // No insertions of timestamp through API
         };
 
@@ -196,6 +212,8 @@ mod tests {
             name: ORIGINAL_NAME.to_string(),
             latitude: 59.32721,
             longitude: 18.10710,
+            speed: None,
+            heading: None,
             timestamp: None, // No insertions of timestamp through API
         };
 
@@ -221,6 +239,8 @@ mod tests {
             name: "TesTUseR".to_string(),
             latitude: 57.32721,
             longitude: 19.10710,
+            speed: None,
+            heading: None,
             timestamp: None, // No insertions of timestamp through API
         };
 
@@ -266,5 +286,44 @@ mod tests {
         assert!(result.is_none());
         let all_find = get_specific_user_coords(&pool, "olduser").await.unwrap();
         assert!(all_find.is_some());
+    }
+
+    #[sqlx::test]
+    async fn test_upsert_replaces_motion_data() {
+        let pool = setup_test_db().await;
+
+        let moving = UserCoords {
+            name: "mover".to_string(),
+            latitude: 59.32721,
+            longitude: 18.10710,
+            speed: Some(8.3),
+            heading: Some(45.0),
+            timestamp: None,
+        };
+        let inserted = upsert_coords(&pool, &moving).await.unwrap();
+        assert_eq!(inserted.speed, Some(8.3));
+        assert_eq!(inserted.heading, Some(45.0));
+
+        let retrieved = get_specific_user_coords(&pool, "mover")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retrieved.speed, Some(8.3));
+        assert_eq!(retrieved.heading, Some(45.0));
+
+        // A later update without motion data must clear it rather than keep a stale value
+        let no_motion = UserCoords {
+            speed: None,
+            heading: None,
+            ..moving
+        };
+        let updated = upsert_coords(&pool, &no_motion).await.unwrap();
+        assert_eq!(updated.speed, None);
+        assert_eq!(updated.heading, None);
+
+        let all = get_all_coords(&pool).await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].speed, None);
+        assert_eq!(all[0].heading, None);
     }
 }

@@ -143,6 +143,98 @@ async fn get_user_happy_path_and_not_found_and_case_insensitive() {
 }
 
 #[actix_web::test]
+async fn post_coords_with_motion_round_trips_and_clears() {
+    let (pool, token) = build_pool_and_token().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
+    )
+    .await;
+
+    // Speed and heading are stored and returned
+    let payload = serde_json::json!({
+        "name": "Carol",
+        "latitude": 59.3,
+        "longitude": 18.0,
+        "speed": 8.3,
+        "heading": 45.0
+    });
+    let req = test::TestRequest::post()
+        .uri("/api/coords")
+        .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+        .set_json(&payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["speed"], 8.3);
+    assert_eq!(body["heading"], 45.0);
+
+    let req = test::TestRequest::get()
+        .uri("/api/coords/carol")
+        .to_request();
+    let body: serde_json::Value = test::call_and_read_body_json(&app, req).await;
+    assert_eq!(body["speed"], 8.3);
+    assert_eq!(body["heading"], 45.0);
+
+    // An update without motion data clears it; the fields are omitted from the JSON
+    let payload = serde_json::json!({
+        "name": "Carol",
+        "latitude": 59.31,
+        "longitude": 18.01
+    });
+    let req = test::TestRequest::post()
+        .uri("/api/coords")
+        .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+        .set_json(&payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let req = test::TestRequest::get().uri("/api/coords").to_request();
+    let body: serde_json::Value = test::call_and_read_body_json(&app, req).await;
+    let carol = &body.as_array().expect("array")[0];
+    assert_eq!(carol["latitude"], 59.31);
+    assert!(carol.get("speed").is_none());
+    assert!(carol.get("heading").is_none());
+}
+
+#[actix_web::test]
+async fn post_coords_rejects_invalid_motion() {
+    let (pool, token) = build_pool_and_token().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(make_state(pool.clone(), token.clone()))
+            .configure(configure_api),
+    )
+    .await;
+
+    for (speed, heading) in [(-1.0, 90.0), (5.0, 400.0), (5.0, -10.0)] {
+        let payload = serde_json::json!({
+            "name": "dave",
+            "latitude": 1.0,
+            "longitude": 2.0,
+            "speed": speed,
+            "heading": heading
+        });
+        let req = test::TestRequest::post()
+            .uri("/api/coords")
+            .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+            .set_json(&payload)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::BAD_REQUEST,
+            "speed {speed}, heading {heading}"
+        );
+    }
+}
+
+#[actix_web::test]
 async fn options_does_not_500() {
     let (pool, token) = build_pool_and_token().await;
 

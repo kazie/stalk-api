@@ -1,10 +1,10 @@
 use actix_web::{App, HttpServer, web};
 use clap::Parser;
-use log::info;
+use log::{error, info};
 use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::AppState;
 use stalk_api::configure_api;
-use stalk_api::db::{check_and_create_db_file, migrate};
+use stalk_api::db::{check_and_create_db_file, run_pending_migrations};
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -50,9 +50,16 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to create pool");
     info!("Connected to database");
-    if args.migrate {
-        migrate(db_file, &pool).await
+    // Bring the database up to date with the current schema (also creates it with --migrate)
+    if let Err(e) = run_pending_migrations(&pool).await {
+        error!("Database migration failed: {e}");
+        std::process::exit(1);
     }
+    if args.migrate {
+        info!("Database migrated to file '{db_file}'");
+        std::process::exit(0);
+    }
+    info!("Database schema is up to date");
 
     let host = if args.public { "0.0.0.0" } else { "127.0.0.1" };
     let port = args.port;

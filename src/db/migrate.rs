@@ -1,4 +1,5 @@
 use log::{error, info};
+use sqlx::migrate::MigrateError;
 use sqlx::{Pool, Sqlite};
 
 pub fn check_and_create_db_file(db_file: &str) {
@@ -15,16 +16,8 @@ pub fn check_and_create_db_file(db_file: &str) {
     info!("Created empty database file '{db_file}'");
 }
 
-pub async fn migrate(db_file: &str, db_pool: &Pool<Sqlite>) {
-    let result = sqlx::migrate!("./migrations").run(db_pool).await;
-    match result {
-        Ok(_) => {
-            info!("Database migrated to file '{db_file}'");
-            std::process::exit(0);
-        }
-        Err(e) => {
-            error!("Database migration failed: {e}");
-            std::process::exit(1);
-        }
-    }
+/// Apply any migrations not yet recorded in the database. Already applied
+/// migrations are skipped, so this is safe to run on every startup.
+pub async fn run_pending_migrations(db_pool: &Pool<Sqlite>) -> Result<(), MigrateError> {
+    sqlx::migrate!("./migrations").run(db_pool).await
 }
