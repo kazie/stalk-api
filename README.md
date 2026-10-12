@@ -44,6 +44,8 @@ OpenAPI documentation
 - OpenAPI JSON: http://127.0.0.1:8080/api/openapi.json
 
 The API documentation is generated from code using utoipa and stays in sync with the handlers and models.
+Endpoint and field descriptions come from the `///` doc comments on the handlers and models. The
+intro page is `src/openapi.md`, and the WebSocket section's text is `src/openapi_websocket.md`.
 
 ## Location payload
 
@@ -60,3 +62,16 @@ The API documentation is generated from code using utoipa and stays in sync with
 Either one may be omitted or `null`. Each update replaces the previous values, so an update
 without them clears them. Responses and websocket `update` events leave the keys out when they're
 unknown. Any other unknown field is rejected with `400`.
+
+## Errors
+
+Every error response is [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem Details JSON
+(`Content-Type: application/problem+json`) with `type`, `title`, `status`, `detail` and `instance`.
+Validation errors also list every invalid field in `errors`, each with a JSON Pointer:
+
+```json
+{ "type": "about:blank", "title": "Bad Request", "status": 400, "detail": "1 field is invalid",
+  "instance": "/api/coords", "errors": [{ "pointer": "#/latitude", "detail": "must be between -90 and 90" }] }
+```
+
+The full list of statuses is on the RapiDoc page.

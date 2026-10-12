@@ -2,6 +2,7 @@ use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpServer, test, web};
 use awc::Client;
 use sqlx::sqlite::SqlitePoolOptions;
+use stalk_api::problem::PROBLEM_JSON;
 use stalk_api::{AppState, configure_api};
 use std::net::TcpListener;
 
@@ -28,6 +29,40 @@ fn make_state(db: sqlx::Pool<sqlx::Sqlite>, token: String) -> web::Data<AppState
         auth_token: token,
         notifier: coords_update_sender,
     })
+}
+
+async fn init_app() -> impl actix_web::dev::Service<
+    actix_http::Request,
+    Response = actix_web::dev::ServiceResponse,
+    Error = actix_web::Error,
+> {
+    let (pool, token) = build_pool_and_token().await;
+    test::init_service(
+        App::new()
+            .app_data(make_state(pool, token))
+            .configure(configure_api),
+    )
+    .await
+}
+
+/// Asserts the response is an RFC 9457 problem with the given status, for the given path, and
+/// returns its body.
+async fn read_problem(
+    resp: actix_web::dev::ServiceResponse,
+    status: StatusCode,
+    instance: &str,
+) -> serde_json::Value {
+    assert_eq!(resp.status(), status);
+    assert_eq!(
+        resp.headers().get(header::CONTENT_TYPE).unwrap(),
+        PROBLEM_JSON
+    );
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["type"], "about:blank");
+    assert_eq!(body["title"], status.canonical_reason().unwrap());
+    assert_eq!(body["status"], status.as_u16());
+    assert_eq!(body["instance"], instance);
+    body
 }
 
 #[actix_web::test]
@@ -70,7 +105,12 @@ async fn post_coords_requires_auth() {
         .set_json(&payload)
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        resp.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+        "Bearer"
+    );
+    let body = read_problem(resp, StatusCode::UNAUTHORIZED, "/api/coords").await;
+    assert_eq!(body["detail"], "Missing bearer token");
 
     // Wrong token -> 401
     let req = test::TestRequest::post()
@@ -79,7 +119,12 @@ async fn post_coords_requires_auth() {
         .set_json(&payload)
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        resp.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+        r#"Bearer error="invalid_token""#
+    );
+    let body = read_problem(resp, StatusCode::UNAUTHORIZED, "/api/coords").await;
+    assert_eq!(body["detail"], "Invalid bearer token");
 
     // Correct token -> 201 Created
     let req = test::TestRequest::post()
@@ -115,7 +160,8 @@ async fn get_user_happy_path_and_not_found_and_case_insensitive() {
     // Not found initially
     let req = test::TestRequest::get().uri("/api/coords/bob").to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body = read_problem(resp, StatusCode::NOT_FOUND, "/api/coords/bob").await;
+    assert_eq!(body["detail"], "No user named 'bob'");
 
     // Insert via POST
     let payload = serde_json::json!({
@@ -226,12 +272,116 @@ async fn post_coords_rejects_invalid_motion() {
             .set_json(&payload)
             .to_request();
         let resp = test::call_service(&app, req).await;
-        assert_eq!(
-            resp.status(),
-            StatusCode::BAD_REQUEST,
-            "speed {speed}, heading {heading}"
-        );
+        let body = read_problem(resp, StatusCode::BAD_REQUEST, "/api/coords").await;
+        assert_eq!(body["errors"].as_array().unwrap().len(), 1, "{body}");
     }
+}
+
+#[actix_web::test]
+async fn post_coords_reports_every_invalid_field() {
+    let app = init_app().await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/coords")
+        .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+        .set_json(serde_json::json!({
+            "name": "eve",
+            "latitude": 91.0,
+            "longitude": 2.0,
+            "heading": 400.0
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body = read_problem(resp, StatusCode::BAD_REQUEST, "/api/coords").await;
+    assert_eq!(body["detail"], "2 fields are invalid");
+    assert_eq!(
+        body["errors"],
+        serde_json::json!([
+            { "pointer": "#/latitude", "detail": "must be between -90 and 90" },
+            { "pointer": "#/heading", "detail": "must be between 0 and 360" }
+        ])
+    );
+}
+
+#[actix_web::test]
+async fn unparseable_requests_get_problem_details() {
+    let app = init_app().await;
+    let post = || {
+        test::TestRequest::post()
+            .uri("/api/coords")
+            .insert_header((header::AUTHORIZATION, "Bearer test-token"))
+    };
+
+    // Malformed JSON
+    let req = post()
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .set_payload("{not json")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body = read_problem(resp, StatusCode::BAD_REQUEST, "/api/coords").await;
+    assert!(
+        body["detail"]
+            .as_str()
+            .unwrap()
+            .starts_with("Invalid JSON body")
+    );
+
+    // Client-sent timestamp is an unknown field
+    let req = post()
+        .set_json(serde_json::json!({
+            "name": "a", "latitude": 1.0, "longitude": 2.0, "timestamp": "2020-01-01T00:00:00Z"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body = read_problem(resp, StatusCode::BAD_REQUEST, "/api/coords").await;
+    assert!(
+        body["detail"]
+            .as_str()
+            .unwrap()
+            .contains("unknown field `timestamp`")
+    );
+
+    // Wrong content type
+    let req = post()
+        .insert_header((header::CONTENT_TYPE, "text/plain"))
+        .set_payload(r#"{"name":"a","latitude":1.0,"longitude":2.0}"#)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    read_problem(resp, StatusCode::UNSUPPORTED_MEDIA_TYPE, "/api/coords").await;
+
+    // Invalid query string on the websocket endpoint fails before the upgrade
+    let req = test::TestRequest::get()
+        .uri("/ws/coords?initial=yes")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body = read_problem(resp, StatusCode::BAD_REQUEST, "/ws/coords").await;
+    assert!(body["detail"].as_str().unwrap().contains("yes"));
+
+    // A plain GET without upgrade headers is a failed handshake
+    let req = test::TestRequest::get().uri("/ws/coords").to_request();
+    let resp = test::call_service(&app, req).await;
+    read_problem(resp, StatusCode::BAD_REQUEST, "/ws/coords").await;
+}
+
+#[actix_web::test]
+async fn unknown_routes_and_methods_get_problem_details() {
+    let app = init_app().await;
+
+    for path in ["/nope", "/api/nope", "/ws/nope"] {
+        let req = test::TestRequest::get().uri(path).to_request();
+        let resp = test::call_service(&app, req).await;
+        let body = read_problem(resp, StatusCode::NOT_FOUND, path).await;
+        assert_eq!(body["detail"], "No such endpoint", "{path}");
+    }
+
+    let req = test::TestRequest::put()
+        .uri("/api/coords")
+        .set_json(serde_json::json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    // The middleware keeps the headers actix set, so clients still learn the allowed methods
+    assert_eq!(resp.headers().get(header::ALLOW).unwrap(), "POST, GET");
+    read_problem(resp, StatusCode::METHOD_NOT_ALLOWED, "/api/coords").await;
 }
 
 #[actix_web::test]
@@ -299,7 +449,7 @@ async fn delete_requires_auth() {
         .uri("/api/coords/any")
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    read_problem(resp, StatusCode::UNAUTHORIZED, "/api/coords/any").await;
 
     // Wrong token -> 401
     let req = test::TestRequest::delete()
@@ -307,7 +457,7 @@ async fn delete_requires_auth() {
         .insert_header((header::AUTHORIZATION, "Bearer wrong"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    read_problem(resp, StatusCode::UNAUTHORIZED, "/api/coords/any").await;
 }
 
 #[actix_web::test]
@@ -366,5 +516,6 @@ async fn delete_flow_create_then_delete_then_404() {
         .insert_header((header::AUTHORIZATION, "Bearer test-token"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body = read_problem(resp, StatusCode::NOT_FOUND, "/api/coords/charlie").await;
+    assert_eq!(body["detail"], "No user named 'charlie'");
 }

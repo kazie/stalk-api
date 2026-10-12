@@ -1,5 +1,6 @@
 use actix_web::{App, test, web};
 use sqlx::sqlite::SqlitePoolOptions;
+use stalk_api::problem::PROBLEM_JSON;
 use stalk_api::{AppState, configure_api};
 
 #[actix_web::test]
@@ -99,4 +100,125 @@ async fn openapi_json_and_uis_are_served_under_api_scope() {
         swagger_resp.status().is_success(),
         "Swagger UI should return success"
     );
+}
+
+#[actix_web::test]
+async fn openapi_spec_is_documented_for_rapidoc() {
+    use utoipa::OpenApi;
+    let json = serde_json::to_value(stalk_api::openapi::ApiDoc::openapi()).unwrap();
+
+    // The intro page RapiDoc renders comes from src/openapi.md
+    let intro = json["info"]["description"]
+        .as_str()
+        .expect("info.description");
+    for section in [
+        "## Authentication",
+        "## User names",
+        "## Freshness",
+        "## Errors",
+    ] {
+        assert!(
+            intro.contains(section),
+            "intro should have a {section} section"
+        );
+    }
+    assert!(
+        intro.contains("last 60\nminutes"),
+        "intro should explain the 60-minute window"
+    );
+
+    // Every operation shows up in RapiDoc with a summary and a description
+    for (path, item) in json["paths"].as_object().unwrap() {
+        for (method, op) in item.as_object().unwrap() {
+            for field in ["summary", "description"] {
+                assert!(
+                    op[field].as_str().is_some_and(|s| !s.trim().is_empty()),
+                    "{method} {path} should have a {field}"
+                );
+            }
+        }
+    }
+
+    // WebSocket endpoints get their own documented section
+    for path in ["/ws/coords", "/ws/coords/{name}"] {
+        assert_eq!(
+            json["paths"][path]["get"]["tags"],
+            serde_json::json!(["websocket"])
+        );
+    }
+    let tags = json["tags"].as_array().unwrap();
+    for tag in tags {
+        assert!(
+            tag["description"].as_str().is_some_and(|s| !s.is_empty()),
+            "tag {} should have a description",
+            tag["name"]
+        );
+    }
+    assert!(tags.iter().any(|t| t["name"] == "websocket"));
+
+    // `initial` is optional, it defaults to false
+    let initial = &json["paths"]["/ws/coords"]["get"]["parameters"][0];
+    assert_eq!(initial["name"], "initial");
+    assert_eq!(initial["required"], false);
+
+    // Authenticated endpoints document the 401
+    assert!(json["paths"]["/api/coords"]["post"]["responses"]["401"].is_object());
+    assert!(json["paths"]["/api/coords/{name}"]["delete"]["responses"]["401"].is_object());
+    assert!(
+        json["components"]["securitySchemes"]["ApiToken"]["description"]
+            .as_str()
+            .is_some_and(|s| s.contains("API_TOKEN"))
+    );
+
+    // Errors are documented as RFC 9457 problem details
+    let problem = &json["components"]["schemas"]["ProblemDetails"]["properties"];
+    for member in ["type", "title", "status", "detail", "instance", "errors"] {
+        assert!(
+            problem[member].is_object(),
+            "ProblemDetails.{member} should be documented"
+        );
+    }
+    let post_400 = &json["paths"]["/api/coords"]["post"]["responses"]["400"]["content"];
+    assert_eq!(
+        post_400[PROBLEM_JSON]["example"]["errors"][0]["pointer"],
+        "#/latitude"
+    );
+    for (path, item) in json["paths"].as_object().unwrap() {
+        for (method, op) in item.as_object().unwrap() {
+            for (status, response) in op["responses"].as_object().unwrap() {
+                // Shared responses are references into components.responses
+                let response = match response["$ref"].as_str() {
+                    Some(r) => {
+                        &json["components"]["responses"]
+                            [r.trim_start_matches("#/components/responses/")]
+                    }
+                    None => response,
+                };
+                if status.starts_with('4') || status.starts_with('5') {
+                    assert!(
+                        response["content"][PROBLEM_JSON].is_object(),
+                        "{method} {path} {status} should be application/problem+json"
+                    );
+                }
+            }
+        }
+    }
+
+    // Input schema documents its constraints, without the doctests from its doc comment
+    let new_coords = &json["components"]["schemas"]["NewUserCoords"];
+    assert_eq!(new_coords["additionalProperties"], false);
+    assert!(!new_coords["description"].as_str().unwrap().contains("```"));
+    for schema in ["UserCoords", "NewUserCoords"] {
+        let props = &json["components"]["schemas"][schema]["properties"];
+        assert_eq!(props["latitude"]["minimum"], -90.0);
+        assert_eq!(props["latitude"]["maximum"], 90.0);
+        assert_eq!(props["longitude"]["minimum"], -180.0);
+        assert_eq!(props["longitude"]["maximum"], 180.0);
+        for field in ["name", "latitude", "longitude"] {
+            assert!(
+                props[field]["description"].is_string(),
+                "{schema}.{field} should have a description"
+            );
+        }
+    }
 }
