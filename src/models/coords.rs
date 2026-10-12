@@ -1,15 +1,19 @@
+use crate::problem::FieldError;
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 use utoipa::ToSchema;
 
-// Define our item structure for storage/response
+/// A user's latest stored position, as returned by the API and in WebSocket `update` events.
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 pub struct UserCoords {
+    /// User name, with the casing it was first stored with.
     #[schema(example = "hannes")]
     pub name: String,
-    #[schema(example = 59.334)]
+    /// Latitude in WGS84 decimal degrees.
+    #[schema(example = 59.334, minimum = -90, maximum = 90)]
     pub latitude: f64,
-    #[schema(example = 18.063)]
+    /// Longitude in WGS84 decimal degrees.
+    #[schema(example = 18.063, minimum = -180, maximum = 180)]
     pub longitude: f64,
     /// Speed over ground in metres per second. Omitted when unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -20,6 +24,8 @@ pub struct UserCoords {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = 45.0, minimum = 0, exclusive_maximum = 360)]
     pub heading: Option<f64>,
+    /// When the server stored this position, in RFC 3339 UTC with millisecond precision.
+    /// Set by the server and always present in responses.
     #[schema(format = DateTime, example = "2025-09-27T14:20:00.000Z")]
     pub timestamp: Option<String>,
 }
@@ -29,16 +35,22 @@ pub struct UserCoords {
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsEvent {
+    /// A user posted a new position. All `UserCoords` fields sit next to `type`.
     Update(UserCoords),
-    Delete { name: String },
+    /// A user was deleted.
+    Delete {
+        /// The normalized name from the delete request.
+        #[schema(example = "hannes")]
+        name: String,
+    },
 }
 
-// Input DTO without timestamp; reject unknown fields (e.g., client-sent timestamp)
+/// A position to store for a user. The server sets the `timestamp`.
 ///
-/// The struct denies unknown fields so clients cannot sneak in a `timestamp` or
+/// Unknown fields are rejected, so clients cannot sneak in a `timestamp` or
 /// any other unexpected property.
 ///
-/// Examples
+/// # Examples
 ///
 /// Successful deserialization from JSON:
 /// ```
@@ -58,12 +70,21 @@ pub enum WsEvent {
 /// ```
 #[derive(Serialize, Deserialize, Debug, ToSchema)]
 #[serde(deny_unknown_fields)]
+// Keep the doctests above out of the published schema
+#[schema(
+    description = "A position to store for a user. The server sets the `timestamp`, \
+    and any field not listed here is rejected."
+)]
 pub struct NewUserCoords {
-    #[schema(example = "marin")]
+    /// User name. Trimmed and NFC-normalized, matched case-insensitively, and must not be
+    /// empty after trimming.
+    #[schema(example = "marin", min_length = 1)]
     pub name: String,
-    #[schema(example = 59.3325)]
+    /// Latitude in WGS84 decimal degrees.
+    #[schema(example = 59.3325, minimum = -90, maximum = 90)]
     pub latitude: f64,
-    #[schema(example = 18.0649)]
+    /// Longitude in WGS84 decimal degrees.
+    #[schema(example = 18.0649, minimum = -180, maximum = 180)]
     pub longitude: f64,
     /// Speed over ground in metres per second. Omitted when unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,6 +129,8 @@ pub fn normalize_name(name: &str) -> String {
 /// - heading, if present, must be finite and within [0, 360]; 360 is normalized to 0
 /// - timestamp is controlled by the server
 ///
+/// Every broken rule is reported, each as a [`FieldError`] pointing at its field.
+///
 /// Examples
 ///
 /// ```
@@ -136,39 +159,54 @@ pub fn normalize_name(name: &str) -> String {
 /// assert_eq!(out.speed, Some(8.3));
 /// assert_eq!(out.heading, Some(0.0));
 /// ```
-pub fn validate_and_normalize(input: NewUserCoords) -> Result<UserCoords, String> {
-    // Validate latitude and longitude ranges and finiteness
-    if !input.latitude.is_finite() || !input.longitude.is_finite() {
-        return Err("latitude/longitude must be finite numbers".to_string());
-    }
-    if input.latitude < -90.0 || input.latitude > 90.0 {
-        return Err("latitude must be between -90 and 90".to_string());
-    }
-    if input.longitude < -180.0 || input.longitude > 180.0 {
-        return Err("longitude must be between -180 and 180".to_string());
-    }
+///
+/// Invalid input lists every bad field:
+///
+/// ```
+/// use stalk_api::models::{validate_and_normalize, NewUserCoords};
+///
+/// let json = r#"{"name":" ","latitude":91,"longitude":18.0,"heading":400}"#;
+/// let input: NewUserCoords = serde_json::from_str(json).unwrap();
+/// let errors = validate_and_normalize(input).unwrap_err();
+/// let pointers: Vec<_> = errors.iter().map(|e| e.pointer.as_str()).collect();
+/// assert_eq!(pointers, ["#/name", "#/latitude", "#/heading"]);
+/// ```
+pub fn validate_and_normalize(input: NewUserCoords) -> Result<UserCoords, Vec<FieldError>> {
+    // Check every field so the client hears about all problems at once, in field order
+    let mut errors = Vec::new();
 
-    // Validate optional motion data
+    let name = normalize_name(&input.name);
+    if name.is_empty() {
+        errors.push(FieldError::new("name", "must not be empty"));
+    }
+    // `contains` is false for NaN and infinities too
+    if !(-90.0..=90.0).contains(&input.latitude) {
+        errors.push(FieldError::new("latitude", "must be between -90 and 90"));
+    }
+    if !(-180.0..=180.0).contains(&input.longitude) {
+        errors.push(FieldError::new("longitude", "must be between -180 and 180"));
+    }
     if let Some(speed) = input.speed
         && (!speed.is_finite() || speed < 0.0)
     {
-        return Err("speed must be a finite, non-negative number of m/s".to_string());
+        errors.push(FieldError::new(
+            "speed",
+            "must be a finite, non-negative number of m/s",
+        ));
     }
     if let Some(heading) = input.heading
         && !(0.0..=360.0).contains(&heading)
     {
-        return Err("heading must be between 0 and 360 degrees".to_string());
+        errors.push(FieldError::new("heading", "must be between 0 and 360"));
     }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
     // 360 is north again; `== 0.0` also folds -0.0 into 0.0, keeping output within [0, 360)
     let heading = input
         .heading
         .map(|h| if h == 0.0 || h == 360.0 { 0.0 } else { h });
-
-    // Normalize and validate name
-    let name = normalize_name(&input.name);
-    if name.is_empty() {
-        return Err("name must be non-empty".to_string());
-    }
 
     Ok(UserCoords {
         name,
@@ -309,6 +347,30 @@ mod tests {
         let out = validate_and_normalize(with_motion(Some(0.0), Some(0.0))).unwrap();
         assert_eq!(out.speed, Some(0.0));
         assert_eq!(out.heading, Some(0.0));
+    }
+
+    #[test]
+    fn validate_reports_every_invalid_field() {
+        let errors = validate_and_normalize(NewUserCoords {
+            name: "  ".into(),
+            latitude: 91.0,
+            longitude: f64::NAN,
+            speed: Some(-1.0),
+            heading: Some(361.0),
+        })
+        .unwrap_err();
+        let pointers: Vec<_> = errors.iter().map(|e| e.pointer.as_str()).collect();
+        assert_eq!(
+            pointers,
+            [
+                "#/name",
+                "#/latitude",
+                "#/longitude",
+                "#/speed",
+                "#/heading"
+            ]
+        );
+        assert_eq!(errors[1].detail, "must be between -90 and 90");
     }
 
     #[test]

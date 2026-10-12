@@ -1,5 +1,7 @@
 use crate::models::WsEvent;
 use crate::models::normalize_name;
+use crate::problem::ProblemDetails;
+use crate::routes::UserPath;
 use crate::{
     AppState,
     db::{get_all_coords_time_limited, get_specific_user_coords_time_limited},
@@ -45,20 +47,35 @@ where
     deserializer.deserialize_str(Visitor)
 }
 
-/// WebSocket endpoint streaming all user coordinate updates.
+/// Stream updates for all users
+///
+/// Upgrades to a WebSocket that receives a `WsEvent` JSON text frame for every position update
+/// and deletion, for any user. With `?initial=true`, it first sends one `update` frame per user
+/// active in the last 60 minutes (at most 20), so the client gets a full picture without a
+/// separate `GET /api/coords`.
+///
+/// This cannot be tried from the docs page, so use a WebSocket client such as `websocat`.
 #[utoipa::path(
     get,
     path = "/ws/coords",
     params(
-        ("initial" = bool, Query, description = "When true (accepts only true/false or 1/0), send an initial load of all current users as individual update frames before streaming live updates")
+        ("initial" = Option<bool>, Query, description = "Send a snapshot of recently active users before live events. Accepts `true`/`false` or `1`/`0`; defaults to `false`", example = true)
     ),
     responses(
-        (status = 101, description = "Switching Protocols: WebSocket upgrade to a stream of JSON WsEvent messages, tagged by `type` as either `update` (a UserCoords payload) or `delete` (`{ name }`, sent when that user's pin is deleted)", body = WsEvent),
-        (status = 400, description = "Bad request")
+        (status = 101, description = "Switching Protocols. The connection becomes a stream of `WsEvent` JSON text frames", body = WsEvent),
+        (status = 400, description = "Not a valid WebSocket upgrade request, or `initial` is not `true`/`false`/`1`/`0`",
+            body = ProblemDetails, content_type = "application/problem+json",
+            example = json!({
+                "type": "about:blank",
+                "title": "Bad Request",
+                "status": 400,
+                "detail": "Query deserialize error: invalid value: string \"yes\", expected 'true'/'false' or '1'/'0'",
+                "instance": "/ws/coords"
+            }))
     ),
-    tag = "coords"
+    tag = "websocket"
 )]
-#[get("/ws/coords")]
+#[get("/coords")]
 pub async fn ws_coords(
     req: HttpRequest,
     stream: web::Payload,
@@ -160,25 +177,33 @@ pub async fn ws_coords(
     Ok(resp)
 }
 
-/// WebSocket endpoint streaming updates for a single user. Optionally sends snapshot on connect.
+/// Stream updates for one user
+///
+/// Upgrades to a WebSocket that receives `WsEvent` JSON text frames for this user only: an
+/// `update` for every new position and a `delete` if the user is removed. If the user was
+/// updated in the last 60 minutes, that position is sent first as an `update` frame.
+///
+/// The user does not have to exist yet. The stream stays open after a `delete` and picks up
+/// the user again if they post a new position.
+///
+/// This cannot be tried from the docs page, so use a WebSocket client such as `websocat`.
 #[utoipa::path(
     get,
     path = "/ws/coords/{name}",
-    params(
-        ("name" = String, Path, description = "User name (case-insensitive)")
-    ),
+    params(UserPath),
     responses(
-        (status = 101, description = "Switching Protocols: WebSocket upgrade to a stream of JSON WsEvent messages filtered by user, tagged by `type` as either `update` (a UserCoords payload) or `delete` (`{ name }`, sent when this user's pin is deleted)", body = WsEvent),
-        (status = 400, description = "Bad request")
+        (status = 101, description = "Switching Protocols. The connection becomes a stream of this user's `WsEvent` JSON text frames", body = WsEvent),
+        (status = 400, description = "Not a valid WebSocket upgrade request",
+            body = ProblemDetails, content_type = "application/problem+json")
     ),
-    tag = "coords"
+    tag = "websocket"
 )]
-#[get("/ws/coords/{name}")]
+#[get("/coords/{name}")]
 pub async fn ws_coords_user(
     req: HttpRequest,
     stream: web::Payload,
     state: web::Data<AppState>,
-    name: web::Path<String>,
+    path: web::Path<UserPath>,
 ) -> Result<HttpResponse, ActixError> {
     let (resp, mut ws_session, mut client_incoming) = match actix_ws::handle(&req, stream) {
         Ok(parts) => parts,
@@ -188,8 +213,7 @@ pub async fn ws_coords_user(
         }
     };
 
-    let name_raw = name.into_inner();
-    let username = normalize_name(&name_raw);
+    let username = normalize_name(&path.name);
     info!("WS connected: user={username}");
 
     // Optionally send a snapshot if available
