@@ -22,3 +22,6 @@ target/
 
 
 *.sqlite
+
+# nix-direnv
+.direnv/

@@ -1,0 +1,22 @@
+name: Nix
+
+# Builds the dev shell, so a flake.lock bump that breaks it fails here.
+on:
+  push:
+    branches: [ "master" ]
+    paths: [ "flake.nix", "flake.lock", ".github/workflows/nix.yml" ]
+  pull_request:
+    branches: [ "master" ]
+    paths: [ "flake.nix", "flake.lock", ".github/workflows/nix.yml" ]
+
+permissions:
+  contents: read
+
+jobs:
+  devshell:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: cachix/install-nix-action@v31
+    - name: Build dev shell
+      run: nix develop --command sqlx --version

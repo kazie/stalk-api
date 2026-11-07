@@ -27,3 +27,9 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # flake.lock inputs (nixpkgs) for the dev shell.
+  - package-ecosystem: "nix"
+    directory: "/"
+    schedule:
+      interval: "weekly"
