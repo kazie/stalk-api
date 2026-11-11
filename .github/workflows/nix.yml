@@ -4,10 +4,8 @@ name: Nix
 on:
   push:
     branches: [ "master" ]
-    paths: [ "flake.nix", "flake.lock", ".github/workflows/nix.yml" ]
   pull_request:
     branches: [ "master" ]
-    paths: [ "flake.nix", "flake.lock", ".github/workflows/nix.yml" ]
 
 permissions:
   contents: read
@@ -17,6 +15,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
-    - uses: cachix/install-nix-action@v31
+
+    - name: Detect Nix Changes
+      uses: dorny/paths-filter@v3
+      id: changes
+      with:
+        filters: |
+          nix:
+            - 'flake.nix'
+            - 'flake.lock'
+            - '.github/workflows/nix.yml'
+
+    - name: Install Nix
+      if: steps.changes.outputs.nix == 'true' || github.event_name == 'push'
+      uses: cachix/install-nix-action@v31
+
     - name: Build dev shell
+      if: steps.changes.outputs.nix == 'true' || github.event_name == 'push'
       run: nix develop --command sqlx --version

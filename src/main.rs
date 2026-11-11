@@ -5,6 +5,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use stalk_api::AppState;
 use stalk_api::configure_api;
 use stalk_api::db::{check_and_create_db_file, run_pending_migrations};
+use stalk_api::utils::parse_api_tokens;
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -66,8 +67,17 @@ async fn main() -> std::io::Result<()> {
     let bind_addr = format!("{host}:{port}");
     info!("Starting server on {bind_addr}");
     // Load API token once at startup
-    let token = match env::var("API_TOKEN") {
-        Ok(t) if !t.trim().is_empty() => t,
+    let tokens = match env::var("API_TOKEN") {
+        Ok(t) => {
+            let parsed = parse_api_tokens(&t);
+            if parsed.is_empty() {
+                eprintln!(
+                    "Configuration error: API_TOKEN is not set or contains no valid keys. Please set the environment variable and restart the service."
+                );
+                std::process::exit(1);
+            }
+            parsed
+        }
         _ => {
             eprintln!(
                 "Configuration error: API_TOKEN is not set or is empty. Please set the environment variable and restart the service."
@@ -86,7 +96,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool_clone.clone(),
-                auth_token: token.clone(),
+                auth_tokens: tokens.clone(),
                 notifier: coords_update_sender,
             }))
             .configure(configure_api)
