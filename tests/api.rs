@@ -26,7 +26,7 @@ fn make_state(db: sqlx::Pool<sqlx::Sqlite>, token: String) -> web::Data<AppState
     let (coords_update_sender, _unused_receiver) = tokio::sync::broadcast::channel(16);
     web::Data::new(AppState {
         db,
-        auth_token: token,
+        auth_tokens: std::collections::HashSet::from([token]),
         notifier: coords_update_sender,
     })
 }
@@ -518,4 +518,68 @@ async fn delete_flow_create_then_delete_then_404() {
     let resp = test::call_service(&app, req).await;
     let body = read_problem(resp, StatusCode::NOT_FOUND, "/api/coords/charlie").await;
     assert_eq!(body["detail"], "No user named 'charlie'");
+}
+
+#[actix_web::test]
+async fn post_coords_accepts_any_configured_token() {
+    let (pool, _) = build_pool_and_token().await;
+    let (coords_update_sender, _unused_receiver) = tokio::sync::broadcast::channel(16);
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(AppState {
+                db: pool.clone(),
+                auth_tokens: std::collections::HashSet::from([
+                    "token_alpha".to_string(),
+                    "token_beta".to_string(),
+                ]),
+                notifier: coords_update_sender,
+            }))
+            .configure(configure_api),
+    )
+    .await;
+
+    let payload1 = serde_json::json!({
+        "name": "alice",
+        "latitude": 10.0,
+        "longitude": 20.0
+    });
+
+    let req1 = test::TestRequest::post()
+        .uri("/api/coords")
+        .insert_header((header::AUTHORIZATION, "Bearer token_alpha"))
+        .set_json(&payload1)
+        .to_request();
+    let resp1 = test::call_service(&app, req1).await;
+    assert_eq!(resp1.status(), StatusCode::CREATED);
+
+    let payload2 = serde_json::json!({
+        "name": "bob",
+        "latitude": 15.0,
+        "longitude": 25.0
+    });
+
+    let req2 = test::TestRequest::post()
+        .uri("/api/coords")
+        .insert_header((header::AUTHORIZATION, "Bearer token_beta"))
+        .set_json(&payload2)
+        .to_request();
+    let resp2 = test::call_service(&app, req2).await;
+    assert_eq!(resp2.status(), StatusCode::CREATED);
+
+    // Invalid token rejected
+    let req3 = test::TestRequest::post()
+        .uri("/api/coords")
+        .insert_header((header::AUTHORIZATION, "Bearer invalid_token"))
+        .set_json(&payload1)
+        .to_request();
+    let resp3 = test::call_service(&app, req3).await;
+    assert_eq!(resp3.status(), StatusCode::UNAUTHORIZED);
+
+    // DELETE endpoint accepts token_beta as well
+    let req4 = test::TestRequest::delete()
+        .uri("/api/coords/alice")
+        .insert_header((header::AUTHORIZATION, "Bearer token_beta"))
+        .to_request();
+    let resp4 = test::call_service(&app, req4).await;
+    assert_eq!(resp4.status(), StatusCode::NO_CONTENT);
 }

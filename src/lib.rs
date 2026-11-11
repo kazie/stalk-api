@@ -9,6 +9,7 @@ use actix_web::web;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use problem::ApiError;
 use sqlx::{Pool, Sqlite};
+use std::collections::HashSet;
 use utoipa::OpenApi;
 use utoipa_rapidoc::RapiDoc;
 use utoipa_swagger_ui::SwaggerUi;
@@ -16,7 +17,7 @@ use utoipa_swagger_ui::SwaggerUi;
 // Database connection pool and configuration shared across handlers
 pub struct AppState {
     pub db: Pool<Sqlite>,
-    pub auth_token: String,
+    pub auth_tokens: HashSet<String>,
     pub notifier: tokio::sync::broadcast::Sender<crate::models::WsEvent>,
 }
 
@@ -30,7 +31,7 @@ pub async fn validator(
         return Err((ApiError::MissingToken.into(), req));
     };
     match req.app_data::<web::Data<AppState>>() {
-        Some(state) if credentials.token() == state.auth_token => Ok(req),
+        Some(state) if state.auth_tokens.contains(credentials.token()) => Ok(req),
         Some(_) => Err((ApiError::InvalidToken.into(), req)),
         None => {
             log::error!("AppState missing, cannot check bearer token");

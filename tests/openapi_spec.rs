@@ -15,7 +15,7 @@ async fn openapi_json_and_uis_are_served_under_api_scope() {
     let (coords_update_sender, _unused_receiver) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         db: pool,
-        auth_token: "test-token".to_string(),
+        auth_tokens: std::collections::HashSet::from(["test-token".to_string()]),
         notifier: coords_update_sender,
     };
 

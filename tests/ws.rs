@@ -32,7 +32,7 @@ async fn ws_all_users_stream_receives_updates() {
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool.clone(),
-                auth_token: token.clone(),
+                auth_tokens: std::collections::HashSet::from([token.clone()]),
                 notifier: coords_update_sender.clone(),
             }))
             .configure(configure_api)
@@ -101,7 +101,7 @@ async fn ws_per_user_isolation_and_case_insensitive() {
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool.clone(),
-                auth_token: token.clone(),
+                auth_tokens: std::collections::HashSet::from([token.clone()]),
                 notifier: coords_update_sender.clone(),
             }))
             .configure(configure_api)
@@ -171,7 +171,7 @@ async fn ws_per_user_snapshot_on_connect() {
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool.clone(),
-                auth_token: token.clone(),
+                auth_tokens: std::collections::HashSet::from([token.clone()]),
                 notifier: coords_update_sender.clone(),
             }))
             .configure(configure_api)
@@ -239,7 +239,7 @@ async fn ws_all_users_initial_snapshot_like_updates() {
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool.clone(),
-                auth_token: token.clone(),
+                auth_tokens: std::collections::HashSet::from([token.clone()]),
                 notifier: coords_update_sender.clone(),
             }))
             .configure(configure_api)
@@ -348,7 +348,7 @@ async fn ws_broadcasts_delete_event_on_user_deletion() {
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool.clone(),
-                auth_token: token.clone(),
+                auth_tokens: std::collections::HashSet::from([token.clone()]),
                 notifier: coords_update_sender.clone(),
             }))
             .configure(configure_api)
@@ -423,7 +423,7 @@ async fn ws_per_user_stream_receives_delete_event_for_matching_user() {
         App::new()
             .app_data(web::Data::new(AppState {
                 db: pool.clone(),
-                auth_token: token.clone(),
+                auth_tokens: std::collections::HashSet::from([token.clone()]),
                 notifier: coords_update_sender.clone(),
             }))
             .configure(configure_api)

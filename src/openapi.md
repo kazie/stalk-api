@@ -9,7 +9,7 @@ Writes (`POST /api/coords`, `DELETE /api/coords/{name}`) need a bearer token:
 Authorization: Bearer <API_TOKEN>
 ```
 
-`API_TOKEN` is set on the server with the environment variable of the same name. A missing or
+`API_TOKEN` is set on the server with the environment variable of the same name, accepting one or multiple comma-separated keys. A missing or
 wrong token gets `401 Unauthorized`. Reads, the WebSocket streams and these docs are public.
 
 ## User names
